@@ -30,6 +30,35 @@ vi.mock('../src/logger.js', () => ({
 const { logger } = (await import('../src/logger.js')) as {
   logger: Record<'debug' | 'info' | 'warn' | 'error', ReturnType<typeof vi.fn>>;
 };
+
+/**
+ * Windows 全量并行跑时的文件系统抖动缓解：上游 writeSecretFile 的原子
+ * rename 在 AV/索引器短暂占用目标文件时可能 EPERM（Linux CI 无此问题，
+ * 上游同款写路径亦有同样抖动）。凭证落盘属测试夹具固定步骤，重试即可。
+ */
+async function saveWithRetry(
+  store: InstanceType<typeof QuotaCredentialStore>,
+  providerId: string,
+  record: { quotaToolProvider: string; credentials: unknown },
+  attempts = 5,
+): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      store.save(providerId, record);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (
+        attempt >= attempts ||
+        (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')
+      ) {
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+}
+
 const { QuotaRouterConfigLoader } =
   await import('../src/quota-router/config.js');
 const { QuotaCredentialStore } =
@@ -159,13 +188,13 @@ interface AssemblyRig {
 }
 
 /** 参数化装配：真实 T3 数据面 + fake 成本/余额源 + 捕获型粘滞重设 */
-function buildAssemblyRig(options?: {
+async function buildAssemblyRig(options?: {
   /** quota-tool 基础地址（缺省写一个不可达地址，模拟停服） */
   readonly baseUrl?: string;
   readonly snapshotTtlMs?: number;
   readonly balanceUsd?: number;
   readonly adminOverride?: boolean;
-}): AssemblyRig {
+}): Promise<AssemblyRig> {
   const dir = path.join(root, `rig-${(rigSeq += 1)}`);
   const configPath = path.join(dir, 'config', 'quota-router.json');
   const credPath = path.join(dir, 'config', 'quota-router-credentials.json');
@@ -186,7 +215,7 @@ function buildAssemblyRig(options?: {
   const config = new QuotaRouterConfigLoader(configPath);
   const credentials = new QuotaCredentialStore(credPath);
   for (const [profileId, mapped] of Object.entries(MAPPING)) {
-    credentials.save(profileId, {
+    await saveWithRetry(credentials, profileId, {
       quotaToolProvider: mapped.quotaToolProvider,
       credentials: { token: `cred-for-${profileId}` },
     });
@@ -244,7 +273,7 @@ describe('注入点①：真实 ProviderPool + 装配端到端（AC1 / AC4）', 
       opencode: { kind: 'success', result: afpResult(75) }, // 紧张（未耗尽）
     });
     openFixtures.push(fixture);
-    const rig = buildAssemblyRig({ baseUrl: fixture.baseUrl });
+    const rig = await buildAssemblyRig({ baseUrl: fixture.baseUrl });
 
     // 装配策略挂上真实选路循环（T2 桩包真实 ProviderPool + T1 缝）
     const scripted = createScriptedProviderPool({
@@ -288,7 +317,7 @@ describe('注入点①：真实 ProviderPool + 装配端到端（AC1 / AC4）', 
     const fixture = await startFakeQuotaTool();
     const { baseUrl } = fixture;
     await fixture.stop(); // 从未产出数据就下线
-    const rig = buildAssemblyRig({ baseUrl });
+    const rig = await buildAssemblyRig({ baseUrl });
 
     const scripted = createScriptedProviderPool({
       members: MEMBERS.map((id) => ({ id })),
@@ -309,7 +338,7 @@ describe('注入点①：真实 ProviderPool + 装配端到端（AC1 / AC4）', 
       opencode: { kind: 'success', result: afpResult(75) },
     });
     openFixtures.push(fixture);
-    const rig = buildAssemblyRig({
+    const rig = await buildAssemblyRig({
       baseUrl: fixture.baseUrl,
       snapshotTtlMs: 1,
     });
@@ -359,7 +388,7 @@ describe('注入点②：绑定否决钩子 + admin 记账告警', () => {
       opencode: { kind: 'success', result: afpResult(75) },
     });
     openFixtures.push(fixture);
-    const rig = buildAssemblyRig({ baseUrl: fixture.baseUrl });
+    const rig = await buildAssemblyRig({ baseUrl: fixture.baseUrl });
     for (const id of MEMBERS) await rig.refresher.getSnapshot(id);
 
     const verdict = rig.assembly.bindingGate(
@@ -388,7 +417,7 @@ describe('注入点②：绑定否决钩子 + admin 记账告警', () => {
       opencode: { kind: 'success', result: afpResult(100) },
     });
     openFixtures.push(fixture);
-    const strictRig = buildAssemblyRig({ baseUrl: fixture.baseUrl });
+    const strictRig = await buildAssemblyRig({ baseUrl: fixture.baseUrl });
     for (const id of MEMBERS) await strictRig.refresher.getSnapshot(id);
     expect(
       strictRig.assembly.bindingGate(
@@ -397,7 +426,7 @@ describe('注入点②：绑定否决钩子 + admin 记账告警', () => {
       ),
     ).toMatchObject({ action: 'veto', providerId: 'volcano-profile' });
 
-    const adminRig = buildAssemblyRig({
+    const adminRig = await buildAssemblyRig({
       baseUrl: fixture.baseUrl,
       adminOverride: true,
     });
@@ -428,7 +457,7 @@ describe('注入点②：绑定否决钩子 + admin 记账告警', () => {
     const fixture = await startFakeQuotaTool();
     const { baseUrl } = fixture;
     await fixture.stop();
-    const rig = buildAssemblyRig({ baseUrl });
+    const rig = await buildAssemblyRig({ baseUrl });
     expect(
       rig.assembly.bindingGate(
         { groupFolder: 'grp', agentId: null },
@@ -448,7 +477,7 @@ describe('A4：粘滞迁移闸（轮边界语义）', () => {
       opencode: { kind: 'success', result: afpResult(75) },
     });
     openFixtures.push(fixture);
-    const rig = buildAssemblyRig({ baseUrl: fixture.baseUrl });
+    const rig = await buildAssemblyRig({ baseUrl: fixture.baseUrl });
     for (const id of MEMBERS) await rig.refresher.getSnapshot(id);
     expect(
       rig.assembly.stickyGate(
@@ -465,7 +494,7 @@ describe('A4：粘滞迁移闸（轮边界语义）', () => {
       opencode: { kind: 'success', result: afpResult(75) },
     });
     openFixtures.push(fixture);
-    const rig = buildAssemblyRig({ baseUrl: fixture.baseUrl });
+    const rig = await buildAssemblyRig({ baseUrl: fixture.baseUrl });
     for (const id of MEMBERS) await rig.refresher.getSnapshot(id);
     expect(
       rig.assembly.stickyGate(
@@ -496,7 +525,7 @@ describe('注入点③：运行中 fallback 源（承接清单 #3：装配层重
       opencode: { kind: 'success', result: afpResult(75) }, // 紧张、单价 6/M
     });
     openFixtures.push(fixture);
-    const rig = buildAssemblyRig({
+    const rig = await buildAssemblyRig({
       baseUrl: fixture.baseUrl,
       balanceUsd,
     });
@@ -554,7 +583,7 @@ describe('注入点③：运行中 fallback 源（承接清单 #3：装配层重
       path.join(dir, 'config', 'quota-router-credentials.json'),
     );
     for (const [profileId, mapped] of Object.entries(MAPPING)) {
-      credentials.save(profileId, {
+      await saveWithRetry(credentials, profileId, {
         quotaToolProvider: mapped.quotaToolProvider,
         credentials: { token: 'cred' },
       });
@@ -687,7 +716,7 @@ describe('全链路（真实 trySelectPoolProvider + 生产 facade + sessions �
     }
     const credentials = new QuotaCredentialStore(rootCredPath);
     for (const [profileId, vendor] of Object.entries(mapping)) {
-      credentials.save(profileId, {
+      await saveWithRetry(credentials, profileId, {
         quotaToolProvider: vendor,
         credentials: { token: `cred-${vendor}` },
       });
