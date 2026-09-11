@@ -6,6 +6,8 @@
  */
 import { logger } from './logger.js';
 import type { BalancingConfig } from './runtime-config.js';
+import { noopQuotaRoutingPolicy } from './quota-router/index.js';
+import type { QuotaRoutingPolicy } from './quota-router/index.js';
 
 // ─── 类型定义 ──────────────────────────────────────────────
 
@@ -51,6 +53,8 @@ export class ProviderPool {
   private recoveryIntervalMs = DEFAULT_RECOVERY_INTERVAL_MS;
   private healthMap: Map<string, ProviderHealthStatus> = new Map();
   private roundRobinIndex = 0;
+  // T1 seam (HClaw quota-router): injected quota policy, no-op by default
+  private quotaPolicy: QuotaRoutingPolicy = noopQuotaRoutingPolicy;
 
   /**
    * Refresh internal state from V4 provider config.
@@ -81,6 +85,14 @@ export class ProviderPool {
     return this.members.filter((m) => m.enabled).length;
   }
 
+  /**
+   * Assembly-level injection of the HClaw quota-router policy (ADR-0004/0006).
+   * Wiring only: store the injected object — no routing logic lives here.
+   */
+  setQuotaRoutingPolicy(policy: QuotaRoutingPolicy): void {
+    this.quotaPolicy = policy;
+  }
+
   // ─── 选择算法 ────────────────────────────────────────────
 
   /** 选择一个提供商，返回 profileId */
@@ -88,12 +100,17 @@ export class ProviderPool {
     const { strategy, members } = this;
     this.refreshRecoveryState();
 
-    // Filter to enabled + healthy candidates
-    const candidates = members.filter((m) => {
-      if (!m.enabled) return false;
-      const health = this.healthMap.get(m.profileId);
-      return !health || health.healthy;
-    });
+    // Filter to enabled + healthy candidates, then pass through the injected
+    // quota policy (wiring: take injected object → call → return; the default
+    // no-op keeps selection behavior identical to upstream)
+    const candidates = this.quotaPolicy({
+      strategy,
+      candidates: members.filter((m) => {
+        if (!m.enabled) return false;
+        const health = this.healthMap.get(m.profileId);
+        return !health || health.healthy;
+      }),
+    }).candidates;
 
     if (candidates.length === 0) {
       // All unhealthy — best-effort: return first enabled member, or first member
