@@ -163,7 +163,11 @@ function windowScore(w: QuotaWindow, kind: QuotaSignalKind): number | null {
   return null;
 }
 
-/** 美元余额：取 summary 里第一个数值项（真实 DeepSeek 把总余额排首位） */
+/**
+ * 美元余额：取 summary 里第一个数值项（真实 DeepSeek 把总余额排首位）。
+ * 已知取舍：若某厂家调整汇总顺序或多币种并存，可能取错项——阈值/映射可在
+ * 配置侧局部校正，见 issue #4 追评披露。
+ */
 function currencyBalance(input: NormalizeQuotaInput): number | null {
   const item = input.summary.find(
     (s): s is QuotaSummaryItem & { value: number } =>

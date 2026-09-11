@@ -12,6 +12,10 @@
  * - 刷新失败（不可达/凭证拒绝/ok:false）→ **陈旧快照照用**（其数据时间即
  *   陈旧标注）；无快照 → missing 标记
  * - 供应商未登记映射 / 未登记凭证 → missing（缺省行为，fail-open 放行）
+ * - **存储层异常（SQLite 读/写抛错）与注入查询函数抛错一并就地吸收**：
+ *   读失败折 missing（有陈旧则陈旧照用）、写失败本轮照常返回刚取到的
+ *   快照（数据可用仅不持久化）——公开方法绝不 reject，决策层漏 catch
+ *   也不会演成 unhandledRejection 拒绝服务（ADR-0004 红线）
  */
 import { logger } from '../logger.js';
 import type {
@@ -64,34 +68,62 @@ export class QuotaSnapshotRefresher {
 
   /**
    * 决策层/面板的读入口：新鲜快照直读，陈旧快照懒刷新，无数据 missing。
-   * 全部分支返回快照或 missing 标记，不抛异常、不阻塞选路。
+   * 全部分支返回快照或 missing 标记，绝不 reject——存储层（SQLite 读）与
+   * 刷新链路的任何异常都在内部吸收（fail-open，ADR-0004）。
    */
   async getSnapshot(providerId: string): Promise<QuotaSnapshotOrMissing> {
-    const mapping = this.mappingOf(providerId);
-    if (!mapping) return missing(providerId);
+    try {
+      const mapping = this.mappingOf(providerId);
+      if (!mapping) return missing(providerId);
 
-    const existing = this.snapshots.get(providerId);
-    if (existing && this.ageMs(existing) < this.config.get().snapshotTtlMs) {
-      return existing;
+      const existing = this.safeReadExisting(providerId);
+      if (existing && this.ageMs(existing) < this.config.get().snapshotTtlMs) {
+        return existing;
+      }
+      return await this.refreshShared(providerId, mapping, existing);
+    } catch (err) {
+      this.warnStorage(providerId, err);
+      return missing(providerId);
     }
-    return this.refreshShared(providerId, mapping, existing);
   }
 
   /** 强制刷新（绕过 TTL；测试与手动排障用），失败分支与懒刷新一致 */
   async refreshNow(providerId: string): Promise<QuotaSnapshotOrMissing> {
-    const mapping = this.mappingOf(providerId);
-    if (!mapping) return missing(providerId);
-    return this.refreshShared(
-      providerId,
-      mapping,
-      this.snapshots.get(providerId),
-    );
+    try {
+      const mapping = this.mappingOf(providerId);
+      if (!mapping) return missing(providerId);
+      return await this.refreshShared(
+        providerId,
+        mapping,
+        this.safeReadExisting(providerId),
+      );
+    } catch (err) {
+      this.warnStorage(providerId, err);
+      return missing(providerId);
+    }
   }
 
   // ─── 内部 ─────────────────────────────────────────────────
 
   private mappingOf(providerId: string): ProviderQuotaMapping | null {
     return this.config.get().providers[providerId] ?? null;
+  }
+
+  /** 快照读失败（SQLite 抛错等）不算事故：折 null 走刷新/missing，绝不抛出 */
+  private safeReadExisting(providerId: string): StoredQuotaSnapshot | null {
+    try {
+      return this.snapshots.get(providerId);
+    } catch (err) {
+      this.warnStorage(providerId, err);
+      return null;
+    }
+  }
+
+  private warnStorage(providerId: string, err: unknown): void {
+    logger.warn(
+      { providerId, err: err instanceof Error ? err.message : String(err) },
+      'quota-router storage layer failed; failing open (ADR-0004)',
+    );
   }
 
   private ageMs(snapshot: StoredQuotaSnapshot): number {
@@ -132,11 +164,21 @@ export class QuotaSnapshotRefresher {
     }
 
     const endpoint: QuotaToolEndpoint = config.quotaTool;
-    const outcome = await this.query(
-      endpoint,
-      record.quotaToolProvider,
-      record.credentials,
-    );
+    // 注入的查询函数也可能抛错（桩缺陷/上游实现回归）：与网络不可达同折
+    let outcome: QuotaToolOutcome;
+    try {
+      outcome = await this.query(
+        endpoint,
+        record.quotaToolProvider,
+        record.credentials,
+      );
+    } catch (err) {
+      outcome = {
+        ok: false,
+        kind: 'unreachable',
+        error: `quota-tool 查询异常：${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
     if (!outcome.ok) {
       return this.staleOrMissing(providerId, existing, outcome);
     }
@@ -164,7 +206,12 @@ export class QuotaSnapshotRefresher {
       windows: outcome.payload.windows,
       summary: outcome.payload.summary,
     };
-    this.snapshots.upsert(snapshot);
+    // 落库失败不否决刚取到的数据：本轮照常返回（仅不持久化，下次访问重查）
+    try {
+      this.snapshots.upsert(snapshot);
+    } catch (err) {
+      this.warnStorage(providerId, err);
+    }
     return snapshot;
   }
 

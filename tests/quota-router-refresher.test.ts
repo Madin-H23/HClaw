@@ -126,7 +126,13 @@ interface Rig {
   config: InstanceType<typeof QuotaRouterConfigLoader>;
 }
 
-function buildRig(options?: { enrollCredentials?: boolean }): Rig {
+function buildRig(options?: {
+  enrollCredentials?: boolean;
+  /** 故障注入：包住真实快照库（P1 存储层异常吸收测试用），inner 仍登记关闭 */
+  wrapSnapshots?: (
+    inner: InstanceType<typeof QuotaSnapshotStore>,
+  ) => InstanceType<typeof QuotaSnapshotStore>;
+}): Rig {
   const loader = new QuotaRouterConfigLoader(CONFIG_FILE);
   const credentials = new QuotaCredentialStore(CRED_FILE);
   if (options?.enrollCredentials !== false) {
@@ -147,10 +153,19 @@ function buildRig(options?: { enrollCredentials?: boolean }): Rig {
   const refresher = new QuotaSnapshotRefresher({
     config: loader,
     credentials,
-    snapshots,
+    snapshots: options?.wrapSnapshots
+      ? options.wrapSnapshots(snapshots)
+      : snapshots,
     nowMs: clock.nowMs,
   });
-  return { refresher, credentials, snapshots, config: loader };
+  return {
+    refresher,
+    credentials,
+    snapshots: options?.wrapSnapshots
+      ? options.wrapSnapshots(snapshots)
+      : snapshots,
+    config: loader,
+  };
 }
 
 async function start(
@@ -465,5 +480,100 @@ describe('config hot reload (no UI, file edit takes effect on access)', () => {
 
     const result = await rig.refresher.getSnapshot('volcano-profile');
     expect(result).toEqual({ providerId: 'volcano-profile', missing: true });
+  });
+});
+
+describe('storage layer exceptions are absorbed (P1: never rejects, ADR-0004)', () => {
+  const diskError = () => {
+    throw new Error('SQLite disk I/O error (simulated)');
+  };
+  /** 包住真实快照库，按脚本让 get/upsert 抛错（查询路径仍吃 fake-quota-tool） */
+  function flakyStore(
+    inner: InstanceType<typeof QuotaSnapshotStore>,
+    faults: { get?: () => void; upsert?: () => void },
+  ): InstanceType<typeof QuotaSnapshotStore> {
+    return {
+      get: (id: string) => {
+        if (faults.get) faults.get();
+        return inner.get(id);
+      },
+      upsert: (snapshot: unknown) => {
+        if (faults.upsert) faults.upsert();
+        return inner.upsert(snapshot as never);
+      },
+    } as unknown as InstanceType<typeof QuotaSnapshotStore>;
+  }
+
+  test('snapshot read throws + service unreachable → resolves missing, does not reject', async () => {
+    const fixture = await start(); // 无脚本：查询走 unknown-vendor 失败路
+    writeConfigWithBaseUrl(fixture.baseUrl);
+    const rig = buildRig({
+      wrapSnapshots: (inner) => flakyStore(inner, { get: diskError }),
+    });
+
+    // 显式 await 无 reject 即通过；再防一层断言结果形态
+    await expect(rig.refresher.getSnapshot('volcano-profile')).resolves.toEqual(
+      { providerId: 'volcano-profile', missing: true },
+    );
+  });
+
+  test('snapshot read and write both throw + service fine → still serves the fresh snapshot, does not reject', async () => {
+    const fixture = await start({
+      volcano: { kind: 'success', result: afpResult(96) },
+    });
+    writeConfigWithBaseUrl(fixture.baseUrl);
+    const rig = buildRig({
+      wrapSnapshots: (inner) =>
+        flakyStore(inner, { get: diskError, upsert: diskError }),
+    });
+
+    const result = await rig.refresher.getSnapshot('volcano-profile');
+    expect(isMissingSnapshot(result)).toBe(false); // 刚取到的数据不因落库失败被丢弃
+    if (isMissingSnapshot(result)) return;
+    expect(result.tier).toBe('critical');
+    expect(fixture.requests).toHaveLength(1);
+    // 二次访问：读仍抛错 → 重走刷新，依旧不抛（无持久化，符合降级预期）
+    await expect(
+      rig.refresher.getSnapshot('volcano-profile'),
+    ).resolves.toBeDefined();
+  });
+
+  test('refreshNow with throwing store never rejects (public surface is rejection-free)', async () => {
+    const fixture = await start({
+      volcano: { kind: 'success', result: afpResult(96) },
+    });
+    writeConfigWithBaseUrl(fixture.baseUrl);
+    const rig = buildRig({
+      wrapSnapshots: (inner) => flakyStore(inner, { get: diskError }),
+    });
+
+    await expect(
+      rig.refresher.refreshNow('volcano-profile'),
+    ).resolves.toBeDefined();
+  });
+
+  test('injected query function throwing folds to unreachable (stale served or missing)', async () => {
+    const fixture = await start();
+    writeConfigWithBaseUrl(fixture.baseUrl);
+    const inner = new QuotaSnapshotStore(DB_PATH);
+    openStores.push(inner);
+    const config = new QuotaRouterConfigLoader(CONFIG_FILE);
+    const credentials = new QuotaCredentialStore(CRED_FILE);
+    credentials.save('volcano-profile', {
+      quotaToolProvider: 'volcano',
+      credentials: { token: 't' },
+    });
+    const refresher = new QuotaSnapshotRefresher({
+      config,
+      credentials,
+      snapshots: inner,
+      query: () => Promise.reject(new Error('query stub exploded')),
+      nowMs: clock.nowMs,
+    });
+
+    await expect(refresher.getSnapshot('volcano-profile')).resolves.toEqual({
+      providerId: 'volcano-profile',
+      missing: true,
+    });
   });
 });
