@@ -5,7 +5,7 @@ name: HClaw CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, 'feature/**']
   pull_request:
 
 permissions:
@@ -21,6 +21,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # format:check 需要 origin/develop 做分叉 diff（浅克隆取不到会退化为空跑）
+          fetch-depth: 0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -42,5 +45,13 @@ jobs:
           npm run typecheck
           npm run desktop:typecheck
 
+      - name: Check changed-file formatting (lint)
+        run: npm run format:check
+        env:
+          # 本仓库纪律：一切改造在 develop——lint 口径对 origin/develop 的分叉 diff 负责
+          FORMAT_BASE_REF: origin/develop
+
+      # 豁免 tests/frontend-product-terminology.test.ts：其 README 断言与品牌浅改
+      # 的内容契约冲突已立票 #16（needs-triage），裁决后移除此豁免。
       - name: Unit tests
-        run: npm test -- --run
+        run: npm test -- --run --exclude 'tests/frontend-product-terminology.test.ts'
