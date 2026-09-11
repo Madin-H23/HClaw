@@ -5,6 +5,9 @@
  * T3 落数据面：quota-tool 适配器 / 凭证自持加密存储 / 独立快照库
  * （data/db/quota-router.db，ADR-0006）/ 档位归一化 / TTL 懒刷新
  * + single-flight（选路访问时刷新，ADR-0004 fail-open）。
+ * T4 落成本与余额源：CC Switch 库只读（单价+已花成本，绝不写）、
+ * 上游 billing 只读消费（用户余额，语义原样）+ 三源统一输入类型
+ * （routing-inputs，单点定义）。
  * 决策的选定/降档/否决形态由后续票扩展（SPEC #1 注入点①②③）。
  */
 import type { ProviderPoolMember } from '../provider-pool.js';
@@ -74,3 +77,34 @@ export {
 
 export type { QuotaSnapshotRefresherOptions } from './refresher.js';
 export { QuotaSnapshotRefresher } from './refresher.js';
+
+// ─── T4：成本与余额源（CC Switch 只读 / 上游 billing / 统一输入类型） ───
+
+export type {
+  ModelPrice,
+  MissingModelPrice,
+  ModelPriceOrMissing,
+  ProviderSpentCost,
+  MissingProviderSpentCost,
+  ProviderSpentCostOrMissing,
+  CcSwitchFailureKind,
+  CcSwitchSourceFailure,
+  CcSwitchCostSourceOptions,
+} from './cc-switch-cost-source.js';
+export {
+  CcSwitchCostSource,
+  defaultCcSwitchDbPath,
+} from './cc-switch-cost-source.js';
+
+export type {
+  BillingBalanceReader,
+  BillingSourceFailure,
+  MissingUserBalance,
+  UserBalanceOrMissing,
+} from './billing-balance-source.js';
+export {
+  BillingBalanceSource,
+  isMissingUserBalance,
+} from './billing-balance-source.js';
+
+export type { RoutingQuotaInputs } from './routing-inputs.js';
