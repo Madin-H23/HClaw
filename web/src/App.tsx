@@ -73,6 +73,10 @@ const CapabilitiesPage = lazy(() =>
     default: m.CapabilitiesPage,
   })),
 );
+// HClaw T7：额度面板（中文 UI，admin 权限）
+const QuotaPage = lazy(() =>
+  import('./pages/QuotaPage').then((m) => ({ default: m.QuotaPage })),
+);
 
 function UsageRouteFallback() {
   return (
@@ -221,6 +225,17 @@ const appRoutes = createRoutesFromElements(
       <Route
         path="/plugins"
         element={<Navigate to="/capabilities/plugins" replace />}
+      />
+      <Route
+        path="/quota"
+        element={
+          // HClaw T7：额度面板路由挂载（admin 口径，与 /monitor 同权限门）
+          <AuthGuard requiredPermission="manage_system_config">
+            <Suspense fallback={null}>
+              <QuotaPage />
+            </Suspense>
+          </AuthGuard>
+        }
       />
       <Route
         path="/settings"

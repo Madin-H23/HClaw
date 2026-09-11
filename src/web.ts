@@ -68,6 +68,8 @@ import bugReportRoutes from './routes/bug-report.js';
 import channelAccountRoutes, {
   injectChannelAccountDeps,
 } from './routes/channel-accounts.js';
+// HClaw T7：额度面板取数端点（quota-router 只读口径，admin 鉴权）
+import quotaRoutes from './routes/quota.js';
 import {
   checkBillingAccess,
   formatBillingAccessDeniedMessage,
@@ -284,6 +286,8 @@ app.route('/api/usage', usageRoutes);
 app.route('/api/billing', billingRoutes);
 app.route('/api/bug-report', bugReportRoutes);
 app.route('/api/channel-accounts', channelAccountRoutes);
+// HClaw T7：额度面板取数端点挂载（唯一 quota-router REST 挂载行）
+app.route('/api/quota', quotaRoutes);
 
 // --- POST /api/messages ---
 

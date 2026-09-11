@@ -47,7 +47,10 @@ import {
   type ModelPriceOrMissing,
   type ProviderSpentCostOrMissing,
 } from './cc-switch-cost-source.js';
-import { QuotaRouterConfigLoader } from './config.js';
+import {
+  DEFAULT_QUOTA_ROUTER_CONFIG,
+  QuotaRouterConfigLoader,
+} from './config.js';
 import {
   BillingBalanceSource,
   type UserBalanceOrMissing,
@@ -68,6 +71,7 @@ import {
   type StoredQuotaSnapshot,
 } from './snapshot-store.js';
 import { QUOTA_TIER_LABELS } from './tiers.js';
+import { emitQuotaTurnCard, type QuotaCardKind } from './turn-cards.js';
 import type {
   QuotaRoutingContext,
   QuotaRoutingDecision,
@@ -99,7 +103,7 @@ export type StickyResetWriter = (
   providerId: string,
 ) => void;
 
-/** admin 显式放行探针：T8 额度面板接入前缺省恒 false（无旋钮即不放行） */
+/** admin 显式放行探针：生产接线为 quota-router.json 的 adminOverride 旋钮（缺省 false） */
 export type AdminOverrideProbe = (
   scope: QuotaSessionScope,
   providerId: string,
@@ -253,6 +257,7 @@ export class QuotaRouterAssembly {
         nowMs: this.nowMs(),
       });
       this.logDecision('binding-gate', decision);
+      this.emitBindingTurnCard(scope, decision);
 
       if (decision.kind === 'downgrade') {
         // 消费 newStickyProviderId（T5 移交清单 #2）：降档目标即新粘滞点。
@@ -407,6 +412,64 @@ export class QuotaRouterAssembly {
   // ─── 内部：输入组装与决策消费 ───────────────────────────────
 
   /**
+   * 会话内提示卡片（T7）：绑定路径三类决策各发一张——降档/否决/admin 放行，
+   * 徽标+一行 reason（T5 透传）；数据时间取被否决/被降档供应商快照的
+   * fetchedAt（可选展示）。普通绑定放行不发卡（无事件发生）。
+   * fire-and-forget：卡片任何失败由 turn-cards 内部吸收，绝不影响裁决返回。
+   */
+  private emitBindingTurnCard(
+    scope: QuotaSessionScope,
+    decision: RoutingDecision,
+  ): void {
+    let kind: QuotaCardKind | null;
+    let exhaustedId: string;
+    if (decision.kind === 'downgrade') {
+      kind = 'downgrade';
+      exhaustedId = decision.fromProviderId;
+    } else if (decision.kind === 'veto') {
+      kind = 'veto';
+      exhaustedId = decision.providerId;
+    } else if (decision.kind === 'select' && decision.adminOverride) {
+      kind = 'override-allow';
+      exhaustedId = decision.providerId;
+    } else {
+      return;
+    }
+    const snapshot = this.options.snapshots.get(exhaustedId);
+    const dataTime =
+      snapshot && !isMissingSnapshot(snapshot)
+        ? (snapshot as StoredQuotaSnapshot).fetchedAt
+        : null;
+    void emitQuotaTurnCard({ scope, kind, reason: decision.reason, dataTime });
+  }
+
+  // ─── 额度面板只读口径（T7） ─────────────────────────────────
+
+  /**
+   * 面板单条目快照读取：同步直读快照库 + refresher 懒刷新 fire-and-forget
+   * （面板访问点即刷新点，与选路 inputFor 同一语义，绝不等待网络）。
+   * stale/ageMs 以注入时钟与配置 TTL 裁决（陈旧照用，只标注——ADR-0004）。
+   */
+  panelEntry(providerId: string): {
+    snapshot: StoredQuotaSnapshot | null;
+    stale: boolean;
+    ageMs: number | null;
+  } {
+    void this.options.refresher.getSnapshot(providerId).catch(() => {});
+    const snapshot = this.options.snapshots.get(providerId);
+    const fetchedMs = snapshot ? Date.parse(snapshot.fetchedAt) : NaN;
+    const ageMs = Number.isFinite(fetchedMs)
+      ? Math.max(0, this.nowMs() - fetchedMs)
+      : null;
+    const ttlMs = this.options.config.get().snapshotTtlMs;
+    return {
+      snapshot,
+      ageMs,
+      stale: ageMs !== null && ageMs > ttlMs,
+    };
+  }
+
+  /**
    * 三源统一输入组装（T4 四槽位）：快照槽位 = 同步直读快照库 + refresher
    * 懒刷新 fire-and-forget（访问点即刷新点，刷新结果供下一轮决策，选路
    * 永不等待网络——ADR-0004）；成本/余额槽位缺失由各源自带 missing 表示。
@@ -558,6 +621,59 @@ export interface QuotaRouterFacade {
     excludeModelId?: string | null;
     balanceUserId?: string | null;
   }): string | null;
+  /** 额度面板只读取数（T7）：不暴露任何凭证；未配置时 entries 全部 mapped=false */
+  quotaPanel(): QuotaPanelData;
+}
+
+/** 额度面板条目（T7）：快照或缺失 + 陈旧标注（展示口径由 routes/quota.ts 组装） */
+export interface QuotaPanelEntry {
+  readonly providerId: string;
+  /** 是否已在 quota-router.json 登记额度源映射 */
+  readonly mapped: boolean;
+  /** 已落库快照；null = 无快照（未刷新过/刷新失败/构造降级），消费侧降级展示 */
+  readonly snapshot: StoredQuotaSnapshot | null;
+  /** 数据时间超过 TTL（陈旧照用，只标注——ADR-0004） */
+  readonly stale: boolean;
+  /** 数据年龄（毫秒）；fetchedAt 不可解析时 null */
+  readonly ageMs: number | null;
+}
+
+export interface QuotaPanelData {
+  readonly configured: boolean;
+  readonly snapshotTtlMs: number;
+  readonly entries: readonly QuotaPanelEntry[];
+}
+
+/**
+ * 面板数据组装（纯函数，facade 与测试共用）：供应商全集 = 供应商池 ∪ 已登记
+ * 映射；panelEntryOf 返回 null = 重件装配不可用（构造降级）→ 快照槽位按缺失。
+ */
+export function buildQuotaPanelData(input: {
+  readonly mappedProviders: Readonly<Record<string, unknown>>;
+  readonly snapshotTtlMs: number;
+  readonly poolProviderIds: readonly string[];
+  readonly panelEntryOf: (providerId: string) => {
+    snapshot: StoredQuotaSnapshot | null;
+    stale: boolean;
+    ageMs: number | null;
+  } | null;
+}): QuotaPanelData {
+  const mappedIds = Object.keys(input.mappedProviders);
+  const ids = [...new Set([...input.poolProviderIds, ...mappedIds])].sort();
+  const entries = ids.map((providerId) => ({
+    providerId,
+    mapped: mappedIds.includes(providerId),
+    ...(input.panelEntryOf(providerId) ?? {
+      snapshot: null,
+      stale: false,
+      ageMs: null,
+    }),
+  }));
+  return {
+    configured: mappedIds.length > 0,
+    snapshotTtlMs: input.snapshotTtlMs,
+    entries,
+  };
 }
 
 let productionFacade: QuotaRouterFacade | null | undefined;
@@ -625,6 +741,10 @@ function buildProductionFacade(): QuotaRouterFacade {
         resetSticky: (scope, providerId) =>
           setSessionProviderId(scope.groupFolder, scope.agentId, providerId),
         strategyOf: () => getBalancingConfig().strategy,
+        // C 补口（票 #8）：adminOverride 旋钮即生产放行探针——true 时放行被
+        // 否决绑定（降档优先）并走既有记账告警 + 「额度放行」卡片；热生效
+        // （config.get() 按 mtime 重读）
+        adminOverrideProbe: () => config.get().adminOverride,
       });
       assembly = built;
       return built;
@@ -672,6 +792,15 @@ function buildProductionFacade(): QuotaRouterFacade {
         : null,
     fallbackModel: (input) =>
       isConfigured() ? (getAssembly()?.fallbackModel(input) ?? null) : null,
+    quotaPanel: () =>
+      buildQuotaPanelData({
+        mappedProviders: config.get().providers,
+        snapshotTtlMs: config.get().snapshotTtlMs,
+        poolProviderIds: getProviders().map((p) => p.id),
+        // 构造降级（assemblyBroken）→ panelEntryOf=null → 快照按缺失展示
+        panelEntryOf: (providerId) =>
+          getAssembly()?.panelEntry(providerId) ?? null,
+      }),
   };
 }
 
@@ -725,4 +854,25 @@ export function quotaFallbackModel(input: {
   balanceUserId?: string | null;
 }): string | null {
   return getQuotaRouterFacade()?.fallbackModel(input) ?? null;
+}
+
+/**
+ * 额度面板只读取数（T7，src/routes/quota.ts 取用点）。装配构造失败时降级为
+ * 「未配置 + 池供应商全部缺快照」（fail-open：面板永不因 quota-router 异常
+ * 报错，只降级展示）。
+ */
+export function quotaPanelData(): QuotaPanelData {
+  return (
+    getQuotaRouterFacade()?.quotaPanel() ?? {
+      configured: false,
+      snapshotTtlMs: DEFAULT_QUOTA_ROUTER_CONFIG.snapshotTtlMs,
+      entries: getProviders().map((p) => ({
+        providerId: p.id,
+        mapped: false,
+        snapshot: null,
+        stale: false,
+        ageMs: null,
+      })),
+    }
+  );
 }
