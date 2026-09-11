@@ -1,6 +1,6 @@
 {
-  "name": "Miniclaw",
-  "short_name": "Miniclaw",
+  "name": "HClaw",
+  "short_name": "HClaw",
   "description": "Personal Claude Assistant",
   "start_url": "./chat",
   "display": "standalone",

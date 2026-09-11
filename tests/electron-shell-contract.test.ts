@@ -28,7 +28,9 @@ describe('Electron Desktop Shell contract', () => {
   });
 
   it('keeps packaging focused on the desktop shell', () => {
-    expect(builderConfig).toContain('productName: Miniclaw');
+    // T1 品牌浅改（ADR-0005，票面指令）：productName 由 Miniclaw 改为 HClaw，
+    // 测试意图不变（打包聚焦桌面壳、图标与产物目录不动）。
+    expect(builderConfig).toContain('productName: HClaw');
     expect(builderConfig).toContain('icon: assets/miniclaw-icon.png');
     expect(builderConfig).toContain('icon: assets/miniclaw.icns');
     expect(builderConfig).toContain('assets/**/*');

@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "node scripts/check-format-changed.mjs",
+    "lint": "npm run format:check",
     "format:changed": "node scripts/check-format-changed.mjs --write",
     "docs:check": "node scripts/check-docs.mjs",
     "test": "vitest",

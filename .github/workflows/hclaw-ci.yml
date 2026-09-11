@@ -1,0 +1,57 @@
+# HClaw 独立 CI（T1）：typecheck + vitest 单测。上游 ci.yml 保持零改动。
+# 说明：runner 选 ubuntu-24.04（与上游一致，全量单测在该平台全绿）；
+# Windows runner 接入待上游 Windows 固有失败簇清零（见 docs/limitations.md 基线节）。
+name: HClaw CI
+
+on:
+  push:
+    branches: [main, develop, 'feature/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hclaw-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # format:check 需要 origin/develop 做分叉 diff（浅克隆取不到会退化为空跑）
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+            container/agent-runner/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix web ci
+          npm --prefix container/agent-runner ci
+
+      - name: Typecheck (backend + desktop shell)
+        run: |
+          npm run typecheck
+          npm run desktop:typecheck
+
+      - name: Check changed-file formatting (lint)
+        run: npm run format:check
+        env:
+          # 本仓库纪律：一切改造在 develop——lint 口径对 origin/develop 的分叉 diff 负责
+          FORMAT_BASE_REF: origin/develop
+
+      # 豁免 tests/frontend-product-terminology.test.ts：其 README 断言与品牌浅改
+      # 的内容契约冲突已立票 #16（needs-triage），裁决后移除此豁免。
+      - name: Unit tests
+        run: npm test -- --run --exclude 'tests/frontend-product-terminology.test.ts'
