@@ -5,6 +5,7 @@ import {
   Puzzle,
   BarChart3,
   Wallet,
+  Gauge,
   Settings,
 } from 'lucide-react';
 
@@ -22,6 +23,7 @@ export const baseNavItems: NavItem[] = [
   { path: '/capabilities', icon: Puzzle, label: '能力库' },
   { path: '/tasks', icon: Clock4, label: '任务' },
   { path: '/usage', icon: BarChart3, label: '用量', hideOnMobile: true },
+  { path: '/quota', icon: Gauge, label: '额度', hideOnMobile: true }, // HClaw T7 额度面板入口
   { path: '/billing', icon: Wallet, label: '账单', requiresBilling: true },
   { path: '/settings', icon: Settings, label: '设置' },
 ];

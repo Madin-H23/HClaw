@@ -11,6 +11,7 @@
  *   "version": 1,
  *   "quotaTool": { "baseUrl": "http://127.0.0.1:7788", "timeoutMs": 8000 },
  *   "snapshotTtlMs": 300000,
+ *   "adminOverride": false,
  *   "tierThresholds": {
  *     "absolute":   { "tight": 25, "critical": 10, "exhausted": 0 },
  *     "percentage": { "tight": 25, "critical": 10, "exhausted": 0 },
@@ -20,6 +21,11 @@
  *     "<供应商池 profileId>": { "quotaToolProvider": "volcano" }
  *   }
  * }
+ *
+ * adminOverride（缺省 false）：admin 显式放行旋钮——true 时被额度否决的绑定
+ * 予以放行（降档目标存在时仍降档优先），并出结构化记账告警 + 会话内「额度放行」
+ * 提示卡片；false（缺省）时否决照常拒绝。只影响绑定否决闸，不新建任何余额/额度
+ * 闸门（ADR-0004 fail-open 语义不变）。
  */
 import fs from 'fs';
 
@@ -43,6 +49,11 @@ export interface QuotaRouterConfig {
   readonly quotaTool: { readonly baseUrl: string; readonly timeoutMs: number };
   /** 快照 TTL（毫秒）：数据时间超过该值触发懒刷新；陈旧快照照用不阻塞 */
   readonly snapshotTtlMs: number;
+  /**
+   * admin 显式放行旋钮（缺省 false）：true 时放行被额度否决的绑定（降档目标
+   * 存在时仍降档优先）并记告警 + 发「额度放行」卡片；语义见文件头 schema 注释。
+   */
+  readonly adminOverride: boolean;
   readonly tierThresholds: TierThresholdTable;
   /** 供应商池 profileId → quota-tool 映射；未登记的供应商 = missing = 放行 */
   readonly providers: Readonly<Record<string, ProviderQuotaMapping>>;
@@ -51,6 +62,7 @@ export interface QuotaRouterConfig {
 export const DEFAULT_QUOTA_ROUTER_CONFIG: QuotaRouterConfig = {
   quotaTool: { baseUrl: 'http://127.0.0.1:7788', timeoutMs: 8000 },
   snapshotTtlMs: 300_000,
+  adminOverride: false,
   tierThresholds: DEFAULT_TIER_THRESHOLDS,
   providers: {},
 };
@@ -129,6 +141,7 @@ function parseConfig(raw: Record<string, unknown>): QuotaRouterConfig {
     snapshotTtlMs:
       positiveNumber(raw.snapshotTtlMs) ??
       DEFAULT_QUOTA_ROUTER_CONFIG.snapshotTtlMs,
+    adminOverride: raw.adminOverride === true,
     tierThresholds: parseThresholds(thresholdsRaw),
     providers: parseProviders(raw.providers),
   };
