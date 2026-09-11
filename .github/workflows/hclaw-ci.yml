@@ -1,0 +1,46 @@
+# HClaw 独立 CI（T1）：typecheck + vitest 单测。上游 ci.yml 保持零改动。
+# 说明：runner 选 ubuntu-24.04（与上游一致，全量单测在该平台全绿）；
+# Windows runner 接入待上游 Windows 固有失败簇清零（见 docs/limitations.md 基线节）。
+name: HClaw CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hclaw-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+            container/agent-runner/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix web ci
+          npm --prefix container/agent-runner ci
+
+      - name: Typecheck (backend + desktop shell)
+        run: |
+          npm run typecheck
+          npm run desktop:typecheck
+
+      - name: Unit tests
+        run: npm test -- --run

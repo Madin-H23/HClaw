@@ -1,0 +1,48 @@
+{
+  "exclude": [
+    "node_modules/**",
+    "web/node_modules/**",
+    "container/agent-runner/node_modules/**",
+    "dist/**",
+    "web/dist/**",
+    "electron/dist/**",
+    "release/**",
+    "data/**",
+    "docs/screenshots/**",
+    "package-lock.json",
+    "web/package-lock.json",
+    "container/agent-runner/package-lock.json"
+  ],
+  "rules": [
+    {
+      "path": "src/db.ts",
+      "rule": "## 上游数据库巨石（红线）\n- 禁止新增任何业务逻辑、函数或字段\n- 数据库 schema 一行不动（ADR-0006：上游迁移链是红线区）\n- HClaw 衍生数据一律落独立模块自己的存储（如 quota-router.db），绝不共享连接",
+      "merge_system_rule": true
+    },
+    {
+      "path": "src/index.ts",
+      "rule": "## 上游主入口巨石（红线）\n- 禁止新增任何逻辑；装配级变更仅限既有注入点的参数透传",
+      "merge_system_rule": true
+    },
+    {
+      "path": "src/provider-pool.ts",
+      "rule": "## 上游选路器（缝级白名单）\n- 白名单 wiring 仅限 T1 注入点：`./quota-router/index.js` 的 import 两行、`quotaPolicy` 私有字段、`setQuotaRoutingPolicy` 装配方法、`selectProvider` 内对注入策略的单次「取注入对象→调用→返回」\n- 白名单之外禁止新增逻辑；round-robin / weighted-round-robin / failover 选择算法与健康度语义一行不改\n- 注入前后行为一致性由 tests/quota-router-noop-injection.test.ts 保证",
+      "merge_system_rule": true
+    },
+    {
+      "path": "**/*",
+      "rule": "## miniclaw 标识符保留面（ADR-0005，禁改）\n- `MINICLAW_*` 环境变量前缀（含 MINICLAW_SERVER_URL / MINICLAW_RENDERER_URL）\n- `~/.miniclaw` 数据目录及 `data/` 下 miniclaw 命名文件\n- `__Host-miniclaw_session` 会话 cookie\n- `mcp__miniclaw__*` MCP 工具前缀\n- `window.miniclawDesktop` 桥接标识符、`miniclaw-theme` 等 localStorage 键、`miniclaw-icon.png` 等资源文件名\n- 以上字样在任何代码改动中不得被重命名为 hclaw",
+      "merge_system_rule": true
+    },
+    {
+      "path": "web/src/**",
+      "rule": "## 品牌浅改边界（ADR-0005 + T1 取舍）\n- 允许改：产品身份面品牌词（标题/加载页/关于页/PWA manifest/alt 与 aria-label）\n- 禁改：内置主 Agent 名 `Miniclaw`（ASSISTANT_NAME，上游数据语义，测试冻结）及其人格引用文案；上游 DOM 测试断言的文案（如 `Home · 固定归属 Miniclaw`、`Miniclaw 内置`）\n- 上游前端不汉化、不重写文案",
+      "merge_system_rule": true
+    },
+    {
+      "path": "**/*",
+      "rule": "## 提交纪律\n- 提交描述一律中文\n- 每行变更须可追溯到票面 AC，不夹带",
+      "merge_system_rule": true
+    }
+  ]
+}
