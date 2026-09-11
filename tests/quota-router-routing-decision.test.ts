@@ -839,3 +839,81 @@ describe('T1 缝契约对齐', () => {
     expect(picked).toBe('prof-plenty');
   });
 });
+
+// ─── T6 承接清单 #5：ageMs=-1（fetchedAt 不可解析）分支 ──────
+
+describe('fetchedAt 不可解析 → 陈旧标注 ageMs=-1（照用不阻塞，T6 承接清单 #5）', () => {
+  const corrupted = (profileId: string, tier: Tier): RoutingQuotaInputs => ({
+    ...quotaInputs(profileId, { tier }),
+    snapshot: {
+      ...storedSnapshot(profileId, tier),
+      fetchedAt: 'not-a-timestamp',
+    },
+  });
+
+  test('池路径：坏数据时间的耗尽候选仍出局，降级标注携带 ageMs=-1', () => {
+    const decision = decideRouting(
+      decisionInput({
+        candidates: [
+          {
+            member: { profileId: 'prof-bad', weight: 1, enabled: true },
+            quota: corrupted('prof-bad', 'exhausted'),
+          },
+          candidate('prof-ok', { tier: 'plenty' }),
+        ],
+      }),
+    );
+    // 陈旧照用不豁免档位裁决：耗尽照常出局
+    expect(survivorIds(decision)).toEqual(['prof-ok']);
+    expect(decision.degradations).toContainEqual({
+      kind: 'snapshot-stale',
+      providerId: 'prof-bad',
+      ageMs: -1,
+    });
+  });
+
+  test('粘滞路径：坏数据时间的粘滞照常维持（fail-open），理由标注陈旧', () => {
+    const decision = decideRouting(
+      decisionInput({
+        candidates: [
+          {
+            member: { profileId: 'prof-bad', weight: 1, enabled: true },
+            quota: corrupted('prof-bad', 'plenty'),
+          },
+        ],
+        stickyProviderId: 'prof-bad',
+      }),
+    );
+    expect(decision.kind).toBe('select');
+    if (decision.kind === 'select') {
+      expect(decision.stickyKept).toBe(true);
+      expect(decision.reason).toContain('陈旧');
+    }
+    expect(decision.degradations).toContainEqual({
+      kind: 'snapshot-stale',
+      providerId: 'prof-bad',
+      ageMs: -1,
+    });
+  });
+
+  test('绑定路径：坏数据时间的非耗尽绑定放行，降级标注携带 ageMs=-1', () => {
+    const decision = decideRouting(
+      decisionInput({
+        candidates: [candidate('prof-ok', { tier: 'plenty' })],
+        agentBinding: {
+          modelConfigId: 'prof-bad',
+          candidate: {
+            member: { profileId: 'prof-bad', weight: 1, enabled: true },
+            quota: corrupted('prof-bad', 'tight'),
+          },
+        },
+      }),
+    );
+    expect(decision.kind).toBe('select');
+    expect(decision.degradations).toContainEqual({
+      kind: 'snapshot-stale',
+      providerId: 'prof-bad',
+      ageMs: -1,
+    });
+  });
+});

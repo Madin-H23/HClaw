@@ -109,3 +109,21 @@ export {
 } from './billing-balance-source.js';
 
 export type { RoutingQuotaInputs } from './routing-inputs.js';
+
+// ─── T5：路由决策纯函数（decideRouting 全家 + 输入类型，T6 移交清单 #1） ──
+
+export type {
+  AgentModelBinding,
+  QuotaCandidateInput,
+  RoutingDecisionInput,
+  RoutingDegradation,
+  RoutingDecision,
+  SelectRoutingDecision,
+  DowngradeRoutingDecision,
+  VetoRoutingDecision,
+  NativeRoutingDecision,
+} from './routing-decision.js';
+export { decideRouting, toQuotaRoutingDecision } from './routing-decision.js';
+
+// 注意：装配模块（assembly.ts，T6）**不**经本 barrel 转出——provider-pool
+// import 本 barrel，转出会制造 import 环；上游文件直接 import assembly.ts。
