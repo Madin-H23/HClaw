@@ -69,10 +69,19 @@ if (candidates.length === 0) {
   process.exit(0);
 }
 
-const prettier = path.join(root, 'node_modules', '.bin', 'prettier');
+// Spawn prettier via node directly: the .bin sh shim cannot be spawned on
+// Windows (spawnSync EINVAL for .cmd since Node's CVE-2024-27980 hardening),
+// and going through a shell would re-interpret candidate paths.
+const prettierBin = path.join(
+  root,
+  'node_modules',
+  'prettier',
+  'bin',
+  'prettier.cjs',
+);
 const result = spawnSync(
-  prettier,
-  [write ? '--write' : '--check', ...candidates],
+  process.execPath,
+  [prettierBin, write ? '--write' : '--check', ...candidates],
   {
     cwd: root,
     stdio: 'inherit',

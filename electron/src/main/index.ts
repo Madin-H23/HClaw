@@ -102,10 +102,16 @@ function isFinitePositive(value: unknown): value is number {
 
 function loadWindowState(): WindowState {
   try {
-    const parsed = JSON.parse(fs.readFileSync(getWindowStatePath(), 'utf8')) as Partial<WindowState>;
+    const parsed = JSON.parse(
+      fs.readFileSync(getWindowStatePath(), 'utf8'),
+    ) as Partial<WindowState>;
     return {
-      width: isFinitePositive(parsed.width) ? parsed.width : WINDOW_DEFAULTS.width,
-      height: isFinitePositive(parsed.height) ? parsed.height : WINDOW_DEFAULTS.height,
+      width: isFinitePositive(parsed.width)
+        ? parsed.width
+        : WINDOW_DEFAULTS.width,
+      height: isFinitePositive(parsed.height)
+        ? parsed.height
+        : WINDOW_DEFAULTS.height,
       ...(isFinitePositive(parsed.x) ? { x: parsed.x } : {}),
       ...(isFinitePositive(parsed.y) ? { y: parsed.y } : {}),
       isMaximized: parsed.isMaximized === true,
@@ -128,9 +134,13 @@ function saveWindowState(): void {
 
   try {
     fs.mkdirSync(path.dirname(getWindowStatePath()), { recursive: true });
-    fs.writeFileSync(getWindowStatePath(), `${JSON.stringify(state, null, 2)}\n`, {
-      mode: 0o600,
-    });
+    fs.writeFileSync(
+      getWindowStatePath(),
+      `${JSON.stringify(state, null, 2)}\n`,
+      {
+        mode: 0o600,
+      },
+    );
   } catch (error) {
     console.warn('[desktop] failed to save window state', error);
   }
@@ -139,8 +149,14 @@ function saveWindowState(): void {
 function isAllowedRendererUrl(rawUrl: string): boolean {
   try {
     const candidate = new URL(rawUrl);
-    const allowed = new Set([new URL(serverUrl).origin, new URL(rendererUrl).origin]);
-    return (candidate.protocol === 'http:' || candidate.protocol === 'https:') && allowed.has(candidate.origin);
+    const allowed = new Set([
+      new URL(serverUrl).origin,
+      new URL(rendererUrl).origin,
+    ]);
+    return (
+      (candidate.protocol === 'http:' || candidate.protocol === 'https:') &&
+      allowed.has(candidate.origin)
+    );
   } catch {
     return false;
   }
@@ -187,7 +203,9 @@ async function loadRenderer(): Promise<void> {
   } catch (error) {
     console.warn('[desktop] renderer could not load', error);
     if (!mainWindow.isDestroyed()) {
-      await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorPageHtml(rendererUrl))}`);
+      await mainWindow.loadURL(
+        `data:text/html;charset=utf-8,${encodeURIComponent(errorPageHtml(rendererUrl))}`,
+      );
     }
   }
 }
@@ -215,21 +233,33 @@ function createMainWindow(): BrowserWindow {
   });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void openExternalUrl(url).catch((error) => console.warn('[desktop] blocked external URL', error));
+    void openExternalUrl(url).catch((error) =>
+      console.warn('[desktop] blocked external URL', error),
+    );
     return { action: 'deny' };
   });
 
   window.webContents.on('will-navigate', (event, url) => {
     if (isAllowedRendererUrl(url)) return;
     event.preventDefault();
-    void openExternalUrl(url).catch((error) => console.warn('[desktop] blocked navigation', error));
+    void openExternalUrl(url).catch((error) =>
+      console.warn('[desktop] blocked navigation', error),
+    );
   });
 
-  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    if (!isMainFrame || errorCode === -3 || validatedURL.startsWith('data:')) return;
-    console.warn(`[desktop] renderer load failed (${errorCode}): ${errorDescription}`);
-    void window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorPageHtml(validatedURL || rendererUrl))}`);
-  });
+  window.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame || errorCode === -3 || validatedURL.startsWith('data:'))
+        return;
+      console.warn(
+        `[desktop] renderer load failed (${errorCode}): ${errorDescription}`,
+      );
+      void window.loadURL(
+        `data:text/html;charset=utf-8,${encodeURIComponent(errorPageHtml(validatedURL || rendererUrl))}`,
+      );
+    },
+  );
 
   window.once('ready-to-show', () => {
     if (state.isMaximized) window.maximize();
@@ -248,7 +278,8 @@ function createMainWindow(): BrowserWindow {
 function registerIpcHandlers(): void {
   ipcMain.handle('desktop:get-config', () => getDesktopConfig());
   ipcMain.handle('desktop:open-external', (_event, url: unknown) => {
-    if (typeof url !== 'string') throw new Error('External URL must be a string');
+    if (typeof url !== 'string')
+      throw new Error('External URL must be a string');
     return openExternalUrl(url);
   });
   ipcMain.handle('desktop:retry', () => loadRenderer());
@@ -279,7 +310,11 @@ function createApplicationMenu(): void {
     {
       label: 'Help',
       submenu: [
-        { label: 'Miniclaw on GitHub', click: () => void openExternalUrl('https://github.com/helsome/miniclaw') },
+        {
+          label: 'Miniclaw on GitHub',
+          click: () =>
+            void openExternalUrl('https://github.com/helsome/miniclaw'),
+        },
       ],
     },
   ];
