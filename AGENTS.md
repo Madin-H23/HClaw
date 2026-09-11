@@ -21,7 +21,7 @@ Single-context：repo 根 `CONTEXT.md`（纯词汇表，术语权威源）+ `doc
 ## 必读
 
 - `CONTEXT.md` — 词汇表：**供应商**（模型端点）与**渠道**（IM 通道）是两个词，别混；「额度」裸用禁，必须带前缀（供应商额度/用户余额）
-- 上游语义零改动红线：上游 `src/`、数据库 schema、`MINICLAW_*` env 前缀、数据目录、会话 cookie、MCP 工具前缀**一律不动**；原创能力只长新模块（ADR-0003/0005/0006）
+- 上游语义零改动红线：上游数据库 schema、`MINICLAW_*` env 前缀、数据目录、会话 cookie、MCP 工具前缀**一律不动**；巨石主文件（主入口/数据库）不添加逻辑；原创逻辑只长新模块，缝级 wiring 保持最小并以 no-op 行为不变的测试证明（ADR-0003/0005/0006，注入点清单见 SPEC #1）
 - 分支纪律：`main` 仅稳定态；一切改造在 `develop`；每票走 `feature/<topic>`，`--no-ff` 合回 develop
 - 验证链模板：typecheck → 单测 → build → E2E → lint → 上游基线对比；基线数见 `docs/limitations.md`（T1 落盘）
 - 渲染面交付三重审查：双轴 code review + OCR（规则入库 `.opencodereview/rule.json`，T1 起）+ judge 视觉验收
