@@ -66,9 +66,13 @@ export type ProviderScript =
   | { kind: 'error'; error: string }
   | { kind: 'timeout'; delayMs: number; error?: string };
 
-/** 凭证拒绝脚本：错误文案对齐真实供应商连接器的认证失败口径 */
+/**
+ * 凭证拒绝脚本：默认文案为 OpenCode 连接器认证失败原话（逐字取自
+ * 真实实现 providers/opencode.mjs 的 cookie 路径），可用 message 覆盖成
+ * 其他连接器口径（如 API Key 路径或火山「鉴权失败（HTTP 401）」形态）。
+ */
 export function credentialRejected(
-  message = '认证失败 (HTTP 401)，请检查凭证',
+  message = '认证失败 (HTTP 401)，请检查 auth cookie',
 ): ProviderScript {
   return { kind: 'error', error: message };
 }

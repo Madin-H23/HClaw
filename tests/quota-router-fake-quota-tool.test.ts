@@ -126,10 +126,11 @@ describe('fake quota-tool serves the real /api/query contract', () => {
   });
 
   test('credential rejection is expressible with the real auth-failure wording', async () => {
-    const fixture = await start({ volcano: credentialRejected() });
-    const { body } = await fixture.query('volcano', { accessKeyId: 'ak' });
+    // 默认文案 = OpenCode 连接器 cookie 路径认证失败原话（providers/opencode.mjs）
+    const fixture = await start({ opencode: credentialRejected() });
+    const { body } = await fixture.query('opencode', { authCookie: 'auth=x' });
     expect(body.ok).toBe(false);
-    expect(body.error).toBe('认证失败 (HTTP 401)，请检查凭证');
+    expect(body.error).toBe('认证失败 (HTTP 401)，请检查 auth cookie');
   });
 
   test('unregistered providers mirror the real 未知厂家 wording on HTTP 200', async () => {
