@@ -8,6 +8,8 @@ import Database from '../src/sqlite-compat.js';
 import {
   CcSwitchCostSource,
   defaultCcSwitchDbPath,
+  isMissingProviderSpentCost,
+  type ProviderSpentCost,
 } from '../src/quota-router/cc-switch-cost-source.js';
 
 // CC Switch 成本源（T4）：只读对接 cc-switch.db（ADR-0003 三源只读、绝不写入）。
@@ -69,6 +71,10 @@ function buildFixtureDb(dbPath: string): void {
     price.run('test-model-a', 'Test Model A', '5', '25', '0.50', '6.25');
     price.run('test-model-b', 'Test Model B', '2', '8', '0.20', '2');
     price.run('broken-model', 'Broken Price', 'abc', '25', '0.50', '6.25');
+    // 脏数据形态（P2-1）：空串会被 Number('')===0 误判成"免费"，科学计数法
+    // 非 CC Switch 真实十进制串域——两者都必须折 missing
+    price.run('empty-model', 'Empty Price', '', '25', '0.50', '6.25');
+    price.run('sci-model', 'Sci Notation', '1e3', '25', '0.50', '6.25');
 
     const rollup = db.prepare(
       `INSERT INTO usage_daily_rollups
@@ -239,6 +245,23 @@ describe('cc-switch cost source reads model pricing (read-only)', () => {
       source.close();
     }
   });
+
+  test('empty or non-decimal price strings ("", "1e3") → missing, never misjudged as free', () => {
+    const source = new CcSwitchCostSource({ dbPath, busyTimeoutMs: 100 });
+    try {
+      expect(source.getModelPrice('empty-model')).toEqual({
+        modelId: 'empty-model',
+        missing: true,
+      });
+      expect(source.getModelPrice('sci-model')).toEqual({
+        modelId: 'sci-model',
+        missing: true,
+      });
+      expect(source.lastFailure()?.kind).toBe('unexpected');
+    } finally {
+      source.close();
+    }
+  });
 });
 
 describe('cc-switch cost source aggregates provider spent cost', () => {
@@ -249,9 +272,13 @@ describe('cc-switch cost source aggregates provider spent cost', () => {
       nowMs: () => FIXED_NOW_MS,
     });
     try {
-      expect(source.getProviderSpentCost('vendor-uuid-1')).toEqual({
+      const cost = source.getProviderSpentCost('vendor-uuid-1');
+      expect(isMissingProviderSpentCost(cost)).toBe(false);
+      // SUM(CAST) 浮点累加精度随 SQLite 版本浮动（≥3.44 才有 Kahan 求和）：
+      // 金额用近似断言，不绑定求和实现
+      expect((cost as ProviderSpentCost).totalCostUsd).toBeCloseTo(0.6, 10);
+      expect(cost).toMatchObject({
         providerId: 'vendor-uuid-1',
-        totalCostUsd: 0.6,
         requestCount: 9,
         firstDate: '2026-09-02',
         lastDate: '2026-09-10',
@@ -272,10 +299,11 @@ describe('cc-switch cost source aggregates provider spent cost', () => {
       const cost = source.getProviderSpentCost('vendor-uuid-1', {
         windowDays: 7,
       });
-      expect(cost).toEqual({
+      expect(isMissingProviderSpentCost(cost)).toBe(false);
+      expect((cost as ProviderSpentCost).totalCostUsd).toBeCloseTo(0.5, 10);
+      expect(cost).toMatchObject({
         providerId: 'vendor-uuid-1',
-        totalCostUsd: 0.5, // 09-05 + 09-10（09-02 落在窗口外）
-        requestCount: 7,
+        requestCount: 7, // 09-05 + 09-10（09-02 落在窗口外）
         firstDate: '2026-09-05',
         lastDate: '2026-09-10',
         windowDays: 7,

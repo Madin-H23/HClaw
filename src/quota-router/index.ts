@@ -100,6 +100,7 @@ export type {
   BillingBalanceReader,
   BillingSourceFailure,
   MissingUserBalance,
+  UserBalance,
   UserBalanceOrMissing,
 } from './billing-balance-source.js';
 export {

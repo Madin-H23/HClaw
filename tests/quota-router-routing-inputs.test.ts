@@ -11,6 +11,7 @@ import {
 import * as routingInputsModule from '../src/quota-router/routing-inputs.js';
 import { isMissingSnapshot as sourceIsMissingSnapshot } from '../src/quota-router/snapshot-store.js';
 import { isMissingModelPrice as costIsMissingModelPrice } from '../src/quota-router/cc-switch-cost-source.js';
+import { isMissingProviderSpentCost as costIsMissingProviderSpentCost } from '../src/quota-router/cc-switch-cost-source.js';
 import { isMissingUserBalance as billingIsMissingUserBalance } from '../src/quota-router/billing-balance-source.js';
 
 // 三源统一输入类型（T4）：单点定义、单点转出——T5 决策层唯一 import 点。
@@ -110,10 +111,13 @@ describe('routing quota inputs (three sources, unified shape)', () => {
   });
 
   test('guards re-exported from the single point are the source implementations', () => {
-    // 单点转出契约：routing-inputs 的守卫与各源模块导出同一引用，不是手抄副本
+    // 单点转出契约：四个守卫与各源模块导出同一引用，不是手抄副本
     expect(routingInputsModule.isMissingSnapshot).toBe(sourceIsMissingSnapshot);
     expect(routingInputsModule.isMissingModelPrice).toBe(
       costIsMissingModelPrice,
+    );
+    expect(routingInputsModule.isMissingProviderSpentCost).toBe(
+      costIsMissingProviderSpentCost,
     );
     expect(routingInputsModule.isMissingUserBalance).toBe(
       billingIsMissingUserBalance,

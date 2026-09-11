@@ -319,11 +319,17 @@ export function defaultCcSwitchDbPath(): string {
 
 // ─── 内部：解析与降级分类 ───────────────────────────────────
 
-/** TEXT 十进制串 → USD 数值；空串/非数字 → null（调用侧折 missing） */
+/**
+ * TEXT 十进制串 → USD 数值；空串/纯空白/非十进制形态 → null（调用侧折 missing）。
+ * 严格十进制正则（真实库实证全是 '5'/'25'/'0.50' 类串）：`Number('')===0` 会把
+ * 空串误判成"免费模型"，`0x10`/`1e3` 等形态会被 Number 静默接受——一律拒绝。
+ */
 function parseUsdPerMillion(raw: unknown): number | null {
-  if (typeof raw !== 'string' && typeof raw !== 'number') return null;
-  const value = typeof raw === 'number' ? raw : Number(raw.trim());
-  return Number.isFinite(value) ? value : null;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
+  return Number(trimmed);
 }
 
 /** 窗口截止日期（UTC YYYY-MM-DD；CC Switch rollups.date 同域） */
