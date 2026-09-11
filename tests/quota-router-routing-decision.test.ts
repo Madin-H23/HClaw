@@ -552,7 +552,7 @@ describe('粘滞优先（轮边界语义）', () => {
 // ─── fail-open 组合矩阵 ─────────────────────────────────────
 
 describe('fail-open 组合矩阵', () => {
-  test('四源全缺失 × 全体候选 → 交上游原生（等价无额度感知）+ 全量降级标注', () => {
+  test('四源全缺失 × 全体候选 → 交上游原生（幸存集全保留按档位序+成本序重排）+ 全量降级标注', () => {
     const decision = decideRouting(
       decisionInput({
         candidates: [
@@ -578,7 +578,7 @@ describe('fail-open 组合矩阵', () => {
     expect(kinds).toContain('price-missing');
     expect(kinds).toContain('spent-cost-missing');
     expect(kinds).toContain('user-balance-missing');
-    expect(decision.reason).toContain('无额度感知');
+    expect(decision.reason).toContain('全部放行');
     expect(decision.reason).toContain('fail-open');
   });
 
@@ -742,7 +742,7 @@ describe('reason 一行可解释性', () => {
     expect(stickyKeep.reason).toContain('prof-sticky');
     expect(stickyKeep.reason).toContain('充足');
     expect(migrate.reason).toContain('prof-sticky');
-    expect(allMissing.reason).toContain('无额度感知');
+    expect(allMissing.reason).toContain('全部放行');
   });
 });
 

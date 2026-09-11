@@ -73,7 +73,11 @@ const { createScriptedProviderPool } =
 const runtimeConfig =
   (await import('../src/runtime-config.js')) as typeof import('../src/runtime-config.js');
 const db = (await import('../src/db.js')) as typeof import('../src/db.js');
-const { trySelectPoolProvider } = await import('../src/container-runner.js');
+const { buildVolumeMounts, getContainerRuntimeEnvDir, trySelectPoolProvider } =
+  await import('../src/container-runner.js');
+const { providerPool } = await import('../src/provider-pool.js');
+const { quotaBindingGate, quotaFallbackModel, quotaStickyGate } =
+  await import('../src/quota-router/assembly.js');
 
 import {
   startFakeQuotaTool,
@@ -282,9 +286,9 @@ describe('注入点①：真实 ProviderPool + 装配端到端（AC1 / AC4）', 
       policy: rig.assembly.quotaPolicy,
     });
 
-    // 冷启动第一轮：快照库尚无数据 → 全部 missing → 幸存集完整放行
-    // （fail-open 不否决任何候选；幸存集按 T5「档位序+成本序」排序）
-    expect(scripted.select()).toBe('opencode-profile');
+    // 冷启动第一轮：快照库尚无数据 → 全部 missing → 缝上下文原样直通
+    // （真等价无额度感知：同引用、不重排，round-robin 从入参序队头起）
+    expect(scripted.select()).toBe('volcano-profile');
 
     // AC4 兑现：选路路径上 refresher 真实查询了三家（真 HTTP 到 fake-quota-tool）
     await waitFor(() =>
@@ -313,22 +317,61 @@ describe('注入点①：真实 ProviderPool + 装配端到端（AC1 / AC4）', 
     }
   });
 
-  test('quota-tool 停服且无快照 → 全员放行，选路与原生逐一同（fail-open）', async () => {
+  test('全部候选无任何额度数据 → 策略原样返回缝上下文（真等价无额度感知，P2-2 钉死）', async () => {
     const fixture = await startFakeQuotaTool();
     const { baseUrl } = fixture;
     await fixture.stop(); // 从未产出数据就下线
     const rig = await buildAssemblyRig({ baseUrl });
 
+    // 同引用直通：连幸存集重排都不发生（无额度数据时排序无依据）
+    const context = {
+      strategy: 'round-robin' as const,
+      candidates: MEMBERS.map((id) => ({
+        profileId: id,
+        weight: 1,
+        enabled: true,
+      })),
+    };
+    expect(rig.assembly.quotaPolicy(context)).toBe(context);
+
+    // 真实选路循环上同样与原生逐一同（round-robin 按入参序轮转）
     const scripted = createScriptedProviderPool({
       members: MEMBERS.map((id) => ({ id })),
       strategy: 'round-robin',
       policy: rig.assembly.quotaPolicy,
     });
     expect(scripted.selectSequence(3)).toEqual([
-      'opencode-profile',
-      'zhipu-profile',
       'volcano-profile',
+      'zhipu-profile',
+      'opencode-profile',
     ]);
+  });
+
+  test('不健康候选不因装配回流：候选集以 T1 缝上下文为准（P1-1 钉死）', async () => {
+    const fixture = await startFakeQuotaTool({
+      volcano: { kind: 'success', result: afpResult(10) }, // 充足
+      zhipu: { kind: 'success', result: afpResult(10) }, // 充足
+      opencode: { kind: 'success', result: afpResult(10) }, // 充足（额度无碍）
+    });
+    openFixtures.push(fixture);
+    const rig = await buildAssemblyRig({ baseUrl: fixture.baseUrl });
+    for (const id of MEMBERS) await rig.refresher.getSnapshot(id);
+
+    const scripted = createScriptedProviderPool({
+      members: MEMBERS.map((id) => ({ id })),
+      strategy: 'round-robin',
+      policy: rig.assembly.quotaPolicy,
+    });
+    // opencode 额度充足但上游健康熔断：缝上下文里不该出现，装配不得回流
+    scripted.pool.reportFailure('opencode-profile', true);
+    expect(scripted.pool.getHealthStatus('opencode-profile').healthy).toBe(
+      false,
+    );
+    const sequence = scripted.selectSequence(4);
+    expect(sequence).not.toContain('opencode-profile');
+    expect(new Set(sequence)).toEqual(
+      new Set(['volcano-profile', 'zhipu-profile']),
+    );
   });
 
   test('quota-tool 停服但有陈旧快照 → 陈旧照用，过滤仍成立且降级标注带数据时间（移交清单 #4）', async () => {
@@ -688,6 +731,38 @@ describe('全链路（真实 trySelectPoolProvider + 生产 facade + sessions �
     fs.mkdirSync(path.join(root, 'db'), { recursive: true });
   });
 
+  /** buildVolumeMounts 的最小 group 夹具（形状沿 tests/container-runner-host-mount） */
+  function volumeGroup(
+    folder: string,
+    createdBy: string | null,
+  ): Parameters<typeof buildVolumeMounts>[0] {
+    return {
+      name: folder,
+      folder,
+      added_at: '2026-09-11T00:00:00.000Z',
+      created_by: createdBy,
+      is_home: false,
+      executionMode: 'container',
+      containerConfig: { additionalMounts: [] },
+    } as Parameters<typeof buildVolumeMounts>[0];
+  }
+
+  /** 读真实 env 组装产物里的 MINICLAW_FALLBACK_MODEL 值（注入点③消费点；env 行经 shell 转义） */
+  function fallbackEnvValue(folder: string): string | undefined {
+    const envPath = path.join(
+      getContainerRuntimeEnvDir(folder, undefined, undefined, null),
+      'env',
+    );
+    const line = fs
+      .readFileSync(envPath, 'utf-8')
+      .split('\n')
+      .find((candidate) => candidate.startsWith('MINICLAW_FALLBACK_MODEL='));
+    if (!line) return undefined;
+    const raw = line.slice('MINICLAW_FALLBACK_MODEL='.length).trim();
+    const quoted = /^'(.*)'$/.exec(raw);
+    return quoted ? quoted[1] : raw;
+  }
+
   /** 在生产 facade 的 DATA_DIR 约定路径上写映射/凭证并预刷快照（真 HTTP） */
   async function writeMappingAndPrewarm(
     fixture: FakeQuotaTool,
@@ -749,6 +824,24 @@ describe('全链路（真实 trySelectPoolProvider + 生产 facade + sessions �
     expect(db.getSessionProviderId('grp-plain')).toBe(bound.id);
   });
 
+  test('未激活时 fallback 源回退 SystemSettings 单值（AC3 回退分支，真实 buildVolumeMounts）', () => {
+    runtimeConfig.saveSystemSettings({
+      fallbackModel: 'settings-static-model',
+    });
+    const provider = runtimeConfig.getProviders().at(-1)!;
+    const resolved = runtimeConfig.resolveProviderById(provider.id);
+    buildVolumeMounts(
+      volumeGroup('grp-fb-inactive', 'user-fb'),
+      false,
+      false,
+      undefined,
+      undefined,
+      undefined,
+      resolved,
+    );
+    expect(fallbackEnvValue('grp-fb-inactive')).toBe('settings-static-model');
+  });
+
   test('绑定耗尽 → 自动降档 → 重设粘滞点（AC2 全链路）', async () => {
     const fixture = await startFakeQuotaTool();
     openFixtures.push(fixture);
@@ -794,6 +887,80 @@ describe('全链路（真实 trySelectPoolProvider + 生产 facade + sessions �
     expect(result?.resetSession).toBe(true);
     // A4：降档目标落地为该会话新粘滞点（newStickyProviderId 消费）
     expect(db.getSessionProviderId('grp-chain')).toBe(cheap.id);
+  });
+
+  test('激活时 fallback 源来自降档序列而非 SystemSettings 单值（AC3，真实 buildVolumeMounts）', async () => {
+    const fixture = await startFakeQuotaTool();
+    openFixtures.push(fixture);
+    const all = runtimeConfig.getProviders();
+    const bound = all.find((provider) => provider.name === 'chain-bound')!;
+    const cheap = all.find((provider) => provider.name === 'chain-cheap')!;
+    const mid = all.find((provider) => provider.name === 'chain-mid')!;
+    // 复活激活配置（重写映射指向本用例的 fake-quota-tool 端口）并预刷
+    // 耗尽/充足/紧张三档
+    await writeMappingAndPrewarm(
+      fixture,
+      {
+        [bound.id]: 'volcano',
+        [cheap.id]: 'zhipu',
+        [mid.id]: 'opencode',
+      },
+      { volcano: 100, zhipu: 10, opencode: 75 },
+    );
+
+    // 余额维度走真实上游 billing：给 workspace owner 充 10 美元
+    db.createUser({
+      id: 'user-fb',
+      username: 'fb-owner',
+      password_hash: 'x',
+      display_name: 'FB Owner',
+      role: 'user',
+      status: 'active',
+      created_at: '2026-09-11T00:00:00.000Z',
+      updated_at: '2026-09-11T00:00:00.000Z',
+    });
+    db.adjustUserBalance('user-fb', 10, 'deposit', 'test', null, null, null);
+
+    // 主选 = chain-cheap（充足档）；序列 = [cheap, mid]，剔除主选模型后
+    // 队头 = chain-mid 的 model-mid——无论真实 CC Switch 单价存在与否均确定
+    // （单价未知属居中段，不改变两家的相对序）
+    const resolved = runtimeConfig.resolveProviderById(cheap.id);
+    buildVolumeMounts(
+      volumeGroup('grp-fb-active', 'user-fb'),
+      false,
+      false,
+      undefined,
+      undefined,
+      undefined,
+      resolved,
+    );
+    const envLine = fallbackEnvValue('grp-fb-active');
+    expect(envLine).toBe('model-mid');
+    // 与 SystemSettings 单值不同（源已替换），且与 facade 同输入计算一致
+    expect(envLine).not.toBe('settings-static-model');
+    expect(envLine).toBe(
+      quotaFallbackModel({
+        excludeModelId: resolved.config.anthropicModel,
+        balanceUserId: 'user-fb',
+      }),
+    );
+  });
+
+  test('粘滞耗尽 → 生产 facade 迁移闸 → 真实池选路 → sessions 重绑（A4 池路径）', () => {
+    const all = runtimeConfig.getProviders();
+    const bound = all.find((provider) => provider.name === 'chain-bound')!;
+    db.setSessionProviderId('grp-mig', null, bound.id);
+    // wiring 粘滞分支的同一调用：额度耗尽 → 轮边界迁移
+    expect(quotaStickyGate('grp-mig', null, bound.id)).toBe('migrate');
+    // wiring 落池选路 + 尾部既有重绑（providerPool 为生产单例，策略已挂）
+    providerPool.refreshFromConfig(
+      runtimeConfig.getEnabledProviders(),
+      runtimeConfig.getBalancingConfig(),
+    );
+    const picked = providerPool.selectProvider();
+    expect(picked).not.toBe(bound.id);
+    db.setSessionProviderId('grp-mig', null, picked);
+    expect(db.getSessionProviderId('grp-mig')).toBe(picked);
   });
 
   test('绑定耗尽且降无可降 → 拒绝并明示额度耗尽（quota_veto）', async () => {

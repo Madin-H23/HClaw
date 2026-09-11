@@ -171,15 +171,36 @@ export class QuotaRouterAssembly {
    * 复用发生在 selectProvider 之前，会话级粘滞决策走 stickyGate）。快照经
    * refresher 懒刷新 fire-and-forget（#4 AC4：refresher 接入选路路径），
    * 决策用最近一次落库快照（陈旧照用，ADR-0004）。任何异常 → 原样放行。
+   *
+   * 候选集一律以缝上下文 context.candidates 为准（上游健康过滤后的幸存者，
+   * QuotaRoutingContext 契约）——绝不经 listCandidates 重建，否则不健康候选
+   * 会回流击穿上游熔断语义。幸存集是 context.candidates 的子集。
    */
   readonly quotaPolicy: QuotaRoutingPolicy = (
     context: QuotaRoutingContext,
   ): QuotaRoutingDecision => {
     if (!this.isConfigured()) return context;
     try {
+      const candidates = context.candidates.map((member) => ({
+        member,
+        quota: this.inputFor(member.profileId, null),
+      }));
+      // 全部候选无任何额度快照 → 真等价无额度感知：原样直通（同引用），
+      // 连幸存集排序都不做——T5 native 路径此时会按档位序+成本序重排，
+      // 缺额度数据语境下那是无依据的排序，与「上游行为不变」不符。
+      if (
+        candidates.length === 0 ||
+        candidates.every((c) => isMissingSnapshot(c.quota.snapshot))
+      ) {
+        logger.debug(
+          { strategy: context.strategy, candidates: candidates.length },
+          'quota-router 全部候选无额度快照，缝上下文原样直通（fail-open）',
+        );
+        return context;
+      }
       const decision = decideRouting({
         strategy: context.strategy,
-        candidates: this.buildCandidateInputs(null),
+        candidates,
         agentBinding: null,
         stickyProviderId: null,
         adminOverride: false,
@@ -342,9 +363,14 @@ export class QuotaRouterAssembly {
   }): string | null {
     if (!this.isConfigured()) return null;
     try {
+      // 同一 userId 的余额每决策只取一次（上游 getUserBalance auto-init 有
+      // 写放大，且多候选各取一次是 N+1 浪费）
+      const balance = input.balanceUserId
+        ? this.options.balanceSource.getUserBalance(input.balanceUserId)
+        : null;
       const decision = decideRouting({
         strategy: this.options.strategyOf(),
-        candidates: this.buildCandidateInputs(input.balanceUserId ?? null),
+        candidates: this.buildCandidateInputs(balance),
         agentBinding: null,
         stickyProviderId: null,
         adminOverride: false,
@@ -353,7 +379,7 @@ export class QuotaRouterAssembly {
       });
       const ordered = this.rebandByAffordability(
         decision.fallbackSequence,
-        input.balanceUserId ?? null,
+        balance,
       );
       const modelId = ordered
         .map((id) => this.options.modelIdOf(id))
@@ -387,7 +413,7 @@ export class QuotaRouterAssembly {
    */
   private inputFor(
     providerId: string,
-    balanceUserId: string | null,
+    balance: UserBalanceOrMissing | null,
   ): RoutingQuotaInputs {
     // refresher 生产接线（#4 AC4 兑现点）：选路路径上真实调用 getSnapshot，
     // 新鲜直读/陈旧懒刷新/失败折 missing，全部在其内部吸收（绝不 reject）
@@ -401,18 +427,16 @@ export class QuotaRouterAssembly {
         ? this.options.costSource.getModelPrice(modelId)
         : { modelId: '', missing: true },
       spentCost: this.options.costSource.getProviderSpentCost(providerId),
-      userBalance: balanceUserId
-        ? this.options.balanceSource.getUserBalance(balanceUserId)
-        : { userId: '', missing: true },
+      userBalance: balance ?? { userId: '', missing: true },
     };
   }
 
   private buildCandidateInputs(
-    balanceUserId: string | null,
+    balance: UserBalanceOrMissing | null,
   ): RoutingDecisionInput['candidates'] {
     return this.options.listCandidates().map((member) => ({
       member,
-      quota: this.inputFor(member.profileId, balanceUserId),
+      quota: this.inputFor(member.profileId, balance),
     }));
   }
 
@@ -430,11 +454,8 @@ export class QuotaRouterAssembly {
    */
   private rebandByAffordability(
     sequence: readonly string[],
-    balanceUserId: string | null,
+    balance: UserBalanceOrMissing | null,
   ): string[] {
-    const balance = balanceUserId
-      ? this.options.balanceSource.getUserBalance(balanceUserId)
-      : null;
     const balanceUsd =
       balance && !('missing' in balance) ? balance.balance_usd : null;
     if (balanceUsd === null) return [...sequence];
@@ -566,15 +587,21 @@ function buildProductionFacade(): QuotaRouterFacade {
   const isConfigured = () => Object.keys(config.get().providers).length > 0;
 
   let assembly: QuotaRouterAssembly | null = null;
-  const getAssembly = (): QuotaRouterAssembly => {
-    if (!assembly) {
+  // 重件构造失败态记忆（P1-2）：构造可抛（快照库打不开/磁盘故障等），
+  // 就地吸收——记一条 WARN 后按「未激活」处理，进程内不再重试重抛刷屏，
+  // 四个 facade 入口统一 fail-open（ADR-0004：绝不因 quota-router 拒绝服务）
+  let assemblyBroken = false;
+  const getAssembly = (): QuotaRouterAssembly | null => {
+    if (assembly) return assembly;
+    if (assemblyBroken) return null;
+    try {
       const credentials = new QuotaCredentialStore(
         path.join(DATA_DIR, 'config', 'quota-router-credentials.json'),
       );
       const snapshots = new QuotaSnapshotStore(
         path.join(DATA_DIR, 'db', 'quota-router.db'),
       );
-      assembly = new QuotaRouterAssembly({
+      const built = new QuotaRouterAssembly({
         config,
         snapshots,
         refresher: new QuotaSnapshotRefresher({
@@ -599,8 +626,16 @@ function buildProductionFacade(): QuotaRouterFacade {
           setSessionProviderId(scope.groupFolder, scope.agentId, providerId),
         strategyOf: () => getBalancingConfig().strategy,
       });
+      assembly = built;
+      return built;
+    } catch (err) {
+      assemblyBroken = true;
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'quota-router 装配构造失败（快照库/凭证不可用）；额度路由保持未激活（fail-open，进程内不再重试）',
+      );
+      return null;
     }
-    return assembly;
   };
 
   let installed = false;
@@ -608,9 +643,11 @@ function buildProductionFacade(): QuotaRouterFacade {
     ensureInstalled() {
       if (installed) return;
       installed = true;
-      // 挂上池的策略自带「未配置直通」守卫：未激活时零装配、零句柄
+      // 挂上池的策略自带「未配置/构造失败直通」守卫：不激活时零装配、零句柄
       providerPool.setQuotaRoutingPolicy((context) =>
-        isConfigured() ? getAssembly().quotaPolicy(context) : context,
+        isConfigured()
+          ? (getAssembly()?.quotaPolicy(context) ?? context)
+          : context,
       );
       logger.info(
         {
@@ -621,14 +658,20 @@ function buildProductionFacade(): QuotaRouterFacade {
     },
     bindingGate: (groupFolder, agentId, boundProviderId) =>
       isConfigured()
-        ? getAssembly().bindingGate({ groupFolder, agentId }, boundProviderId)
+        ? (getAssembly()?.bindingGate(
+            { groupFolder, agentId },
+            boundProviderId,
+          ) ?? null)
         : null,
     stickyGate: (groupFolder, agentId, stickyProviderId) =>
       isConfigured()
-        ? getAssembly().stickyGate({ groupFolder, agentId }, stickyProviderId)
+        ? (getAssembly()?.stickyGate(
+            { groupFolder, agentId },
+            stickyProviderId,
+          ) ?? null)
         : null,
     fallbackModel: (input) =>
-      isConfigured() ? getAssembly().fallbackModel(input) : null,
+      isConfigured() ? (getAssembly()?.fallbackModel(input) ?? null) : null,
   };
 }
 

@@ -22,7 +22,9 @@
  *   上游内部状态，纯函数不越权代选），输出 newStickyFromProviderId 标记供装配
  *   层在上游选定后重设粘滞点。
  * - fail-open 全分支：快照 missing → 该候选放行（缺失不否决）；快照陈旧照用
- *   （标注数据时间与数据年龄）；全部候选 missing → 交上游原生（等价无额度感知）；
+ *   （标注数据时间与数据年龄）；全部候选 missing → 交上游原生（幸存集全保留、
+ *   按档位序+成本序重排——非原样顺序；T6 装配层对此情形另行缝上下文零改动
+ *   直通，见 assembly.ts quotaPolicy）；
  *   单价 / 已花成本 / 用户余额缺失只作降级标注不阻塞选路（MVP 硬约束只看档位，
  *   成本维度进 reason 文案）。上游 billing 余额闸是上游自己的 fail-closed 语义，
  *   本函数不建任何余额闸门。
@@ -378,7 +380,7 @@ function nativePreFilterReason(input: RoutingDecisionInput): string {
       isMissingSnapshot(c.quota.snapshot),
     );
     return allMissing
-      ? `额度快照缺失：${total} 家候选均无快照，等价无额度感知，交上游 ${input.strategy} 策略（fail-open）`
+      ? `额度快照缺失：${total} 家候选均无快照，全部放行并按档位序+成本序排序，交上游 ${input.strategy} 策略（fail-open）`
       : `额度前置过滤：${total} 家候选均未耗尽，原样交上游 ${input.strategy} 策略`;
   }
   const survivorCount = orderSurvivorCandidates(input.candidates).length;
