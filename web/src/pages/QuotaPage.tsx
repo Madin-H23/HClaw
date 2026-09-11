@@ -21,14 +21,19 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
-/** 四档徽标样式（充足绿/紧张黄/临界橙/耗尽红） */
+/**
+ * 四档徽标样式（充足绿/紧张黄/临界橙/耗尽红）。
+ * 色板全走 globals.css 语义 token（随主题/暗色联动）：临界为紧张的实底
+ * 强调形态——warning 实底白字（dark 下亮黄底配 error-bg 深字保证对比度），
+ * 与耗尽（error 系）拉开色相档位递进。
+ */
 const TIER_BADGE_CLASS: Record<QuotaTier, string> = {
   plenty:
     'bg-success-bg text-success dark:bg-success/20 dark:text-success border-transparent',
   tight:
     'bg-warning-bg text-warning dark:bg-warning/20 dark:text-warning border-transparent',
   critical:
-    'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300 border-transparent',
+    'bg-warning text-white dark:bg-warning dark:text-error-bg border-transparent',
   exhausted:
     'bg-error-bg text-error dark:bg-error/20 dark:text-error border-transparent',
 };
