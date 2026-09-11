@@ -17,9 +17,7 @@ export function AboutSection() {
     <div className="space-y-6">
       {/* 项目信息 */}
       <div>
-        <h2 className="text-lg font-semibold text-foreground mb-1">
-          Miniclaw
-        </h2>
+        <h2 className="text-lg font-semibold text-foreground mb-1">HClaw</h2>
         <p className="text-sm text-muted-foreground">
           基于 Claude Agent SDK 的自托管多智能体工作平台
         </p>

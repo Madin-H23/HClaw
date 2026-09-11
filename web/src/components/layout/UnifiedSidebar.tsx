@@ -234,7 +234,7 @@ export function UnifiedSidebar({
           <div className="w-11 h-11 rounded-xl overflow-hidden mb-3 flex-shrink-0">
             <img
               src={`${import.meta.env.BASE_URL}icons/icon-192.png`}
-              alt="Miniclaw"
+              alt="HClaw"
               className="w-full h-full object-cover"
             />
           </div>
@@ -344,7 +344,7 @@ export function UnifiedSidebar({
             <div className="flex items-center gap-2 px-4 pt-6 pb-3 mb-3 flex-shrink-0">
               <img
                 src={`${import.meta.env.BASE_URL}icons/logo-text.svg`}
-                alt={appearance?.appName || 'Miniclaw'}
+                alt={appearance?.appName || 'HClaw'}
                 className="h-10"
               />
               <div className="flex-1" />

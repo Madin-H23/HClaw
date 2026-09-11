@@ -3300,7 +3300,9 @@ export interface AppearanceConfig {
 }
 
 const DEFAULT_APPEARANCE_CONFIG: AppearanceConfig = {
-  appName: ASSISTANT_NAME,
+  // T1 品牌浅改（ADR-0005）：站点/应用显示名默认 HClaw；
+  // AI 人格名（aiName）沿用上游内置主 Agent 名 ASSISTANT_NAME，不动。
+  appName: 'HClaw',
   aiName: ASSISTANT_NAME,
   aiAvatarEmoji: '\u{1F431}',
   aiAvatarColor: '#0d9488',

@@ -190,7 +190,7 @@ export const ShareCardRenderer = forwardRef<HTMLDivElement, ShareCardRendererPro
         >
           <img
             src="/icons/icon-192.png"
-            alt="Miniclaw"
+            alt="HClaw"
             style={{ width: 16, height: 16, borderRadius: 3 }}
           />
           <span style={{ fontSize: 12, color: '#94a3b8' }}>
