@@ -35,9 +35,13 @@
 5. buildCommandIndex — YAML frontmatter parsing parses well-formed frontmatter…（plugin-command-index）
 6. provider fallback source contracts a synthetic assistant provider error cannot park the SDK stream（provider-model-fallback-contract）
 7. reproducible build contract generated StreamEvent copies stay synchronized and formatted（reproducible-build-contract）
-   8–10. resolveTurnOutcome does not mark or commit a final reply until the physical channel ACKs it / routes streaming-card local images through the exact turn outbox… / returns a negative MCP image acknowledgement…（turn-outcome ×3）
-   11–13. warm channel outbox scope wiring contract：bindChannelOutboxScope takes an explicit correlation id… / both warm admissions bind the scope with the IPC deliveryId / cold turns keep relying on the runtime default（warm-channel-outbox-scope-correlation ×3）
-8. dynamic Workflow product contract keeps running Workflow state across a held background acknowledgement（workflow-card-contract）
+8. resolveTurnOutcome does not mark or commit a final reply until the physical channel ACKs it（turn-outcome）
+9. resolveTurnOutcome routes streaming-card local images through the exact turn outbox and includes their ACK（turn-outcome）
+10. resolveTurnOutcome returns a negative MCP image acknowledgement when physical delivery is unconfirmed（turn-outcome）
+11. warm channel outbox scope wiring contract bindChannelOutboxScope takes an explicit correlation id, defaulting to the runtime（warm-channel-outbox-scope-correlation）
+12. warm channel outbox scope wiring contract both warm admissions bind the scope with the IPC deliveryId（warm-channel-outbox-scope-correlation）
+13. warm channel outbox scope wiring contract cold turns keep relying on the runtime default（warm-channel-outbox-scope-correlation）
+14. dynamic Workflow product contract keeps running Workflow state across a held background acknowledgement（workflow-card-contract）
 
 **簇三：POSIX 绝对路径断言，14 例 — #12**
 1–4. managed host Claude memory policy：excludes OS-home and configured host instructions… / keeps workspace-local memory… / treats a missing legacy context source… / detects an SDK memory file that escaped the applied exclusions（claude-memory-policy ×4）
@@ -48,7 +52,9 @@
 **簇四：POSIX 权限位断言（0o600=384 vs NTFS 实际 438），4 例 — #13**
 
 1. channel account routes publishes one stable mode-0600 encryption key in a mode-0700 directory（routes-channel-accounts）
-   2–4. MCP secret exposure boundary：first runtime read atomically migrates legacy embedded secrets and is idempotent / reclaims a pre-existing stale migration lock… / never returns secret values and stores definitions separately（routes-mcp-server-secrets ×3）
+2. MCP secret exposure boundary first runtime read atomically migrates legacy embedded secrets and is idempotent（routes-mcp-server-secrets）
+3. MCP secret exposure boundary reclaims a pre-existing stale migration lock without leaving plaintext secrets（routes-mcp-server-secrets）
+4. MCP secret exposure boundary never returns secret values and stores definitions separately（routes-mcp-server-secrets）
 
 **簇五：冒号/控制字符路径（NTFS 不允许创建 + 盘符冒号被校验拒绝），11 例 — #14**
 1–6. validateAdditionalMountsStrict：returns canonical runtime and persistence forms / rejects a host path containing a colon / rejects a host path containing a control character / hot-reloads a tightened allowlist in the same process / revalidation fails after a previously valid directory is deleted / revalidation fails after a directory is replaced by an escaping symlink（mount-security-strict ×6）
@@ -75,13 +81,15 @@
 
 ## 应用图标
 
-沿用上游 miniclaw 图标资产（`electron/assets/miniclaw-icon.png`、`web/public/icons/*`、文件名不改）。图标替换与产品名同理属 ADR-0005 产品可见面，但**不在 T1 范围**（票面明确「应用图标不在本票」）；`loading-logo.svg` / wordmark 同批后续票处理。
+图标内容已换 HClaw 炉心图（火焰+钳形卷曲），文件名保留上游路径以维持测试契约。替换清单：`electron/assets/miniclaw-icon.png`（1024×1024，内容替换）、`web/public/icons/icon-192.png`、`web/public/icons/apple-touch-icon-180.png`（HTML favicon/touch 引用）、`web/public/icons/icon-512.png`、`web/public/icons/icon-512-maskable.png`（PWA manifest 引用，maskable 版图形按 80% 安全区居中）——尺寸规格与上游一致；矢量母版入库 `docs/assets/hclaw-icon.svg`。未动：`electron/assets/miniclaw.icns`（mac 打包不在本票）、`loading-logo.svg`/`logo-text.svg`（wordmark 动画，随后续渲染面票处理）、其余未被 favicon/manifest 引用的 icon-\* 尺寸。
 
 ## 已知取舍
 
 ### 品牌浅改边界（T1 实际执行面）
 
-T1 按 ADR-0005 完成**产品身份面**替换：electron 壳（窗口标题 / app.setName / 应用菜单 / About「HClaw · 炉心」/ 后端未连接错误页 / URL 校验错误标签）、打包配置（`productName`/`appId=com.hfamily.hclaw`/copyright）、web 入口（`index.html` title 与 apple-title、PWA manifest name）、登录页 / 初始设置向导 / 欢迎语 / 侧栏与加载页 logo alt、站点显示名默认值（`DEFAULT_APPEARANCE_CONFIG.appName='HClaw'`，AI 人格名 `aiName` 仍沿用内置主 Agent 名）。
+T1 按 ADR-0005 完成**产品身份面**替换：electron 壳（窗口标题 / app.setName / 应用菜单 / About「HClaw · 炉心」/ 后端未连接错误页 / URL 校验错误标签）、打包配置（`productName`/`appId=com.hfamily.hclaw`/copyright）、web 入口（`index.html` title 与 apple-title、PWA manifest name）、登录页 / 初始设置向导 / 欢迎语 / 侧栏与加载页 logo alt、站点显示名默认值（`DEFAULT_APPEARANCE_CONFIG.appName='HClaw'`，AI 人格名 `aiName` 仍沿用内置主 Agent 名）、字体方案 label（`PreferencesSection` 默认字体项——fonts/ 无「Miniclaw」字体包，属产品名用法，归品牌面改 HClaw）。
+
+**userData 迁移注意**：`app.setName('HClaw')` + productName 变更使打包版壳级 userData 目录由 `%APPDATA%/Miniclaw` 变为 `%APPDATA%/HClaw`——`window-state.json` 等壳级本地状态不随自动迁移（`MINICLAW_*` env、server 侧 `~/.miniclaw` 数据目录不受影响）。T1 为首票、无存量装机；后续如需与旧版并存/升级，须补壳级状态迁移逻辑。
 
 **未替换**（留待后续票，需视觉验收）：
 
@@ -91,9 +99,11 @@ T1 按 ADR-0005 完成**产品身份面**替换：electron 壳（窗口标题 / 
 
 ### 其他取舍
 
+- **lint 口径**：`npm run lint` = `npm run format:check`（prettier 对「相对 origin/develop 分叉的变更文件」整文件检查；CI 同口径，`FORMAT_BASE_REF=origin/develop`）。`scripts/check-format-changed.mjs` 顺手修复 Windows spawn 兼容（改用 `process.execPath + prettier.cjs` 直跑，规避 Node 对 `.cmd` 的 spawnSync EINVAL 加固）；Windows autocrlf 工作区会因行尾被整文件标记——已对本分支变更文件统一 prettier 化（行尾 LF + 存量重排，无语义变更）。
+- **上游测试断言的两类处理口径**：断言**随产品面改名**的（如 `electron-shell-contract` 冻结 `productName: Miniclaw`）——随品牌更新直接同步断言并注明依据（票面指令 + ADR-0005）；上游**内容契约**冲突（如 #16 断言上游 README 术语段）——涉及上游文案取舍，立票裁决、本票不夹带。
 - **上游测试冻结的旧产品名**：`tests/electron-shell-contract.test.ts` 断言打包配置 `productName: Miniclaw`，与票面指令「productName 改 HClaw」直接冲突。已将该测试的品牌断言同步为 `productName: HClaw`（附注释），测试意图（打包聚焦桌面壳、图标与产物目录不动）不变；上游图标断言 `miniclaw-icon.png` 未动（图标不在本票）。
 - **copyright 字段**：`electron-builder.yml` 的 copyright 随 productName 一并改为 HClaw contributors（安装包元数据属产品可见面）；上游署名以 README Attribution + LICENSE（未动）承载。
-- **CI runner**：`hclaw-ci.yml` 选 ubuntu-24.04（与上游 ci.yml 同平台，全量单测在该平台全绿）。Windows runner 接入待 #10–#15 簇清零，届时需验证 better-sqlite3 在 runner 上可编译（本地 Windows 已实测 `npm ci` 成功、better-sqlite3 可用）。
+- **CI runner**：`hclaw-ci.yml` 选 ubuntu-24.04（与上游 ci.yml 同平台，全量单测在该平台全绿）。Windows runner 接入待 #10–#15 簇清零，届时需验证 better-sqlite3 在 runner 上可编译（本地 Windows 已实测 `npm ci` 成功、better-sqlite3 可用）。CI 单测步骤**显式豁免** `tests/frontend-product-terminology.test.ts`——其 README 内容契约断言与品牌浅改冲突，已立票 #16 待裁决（豁免在 workflow 注释声明，裁决落地后移除）；本地/CI 基线对比口径仍以本节 57 例清单为准（该文件在 Windows 基线属簇七）。
 - **quota-router 注入默认 no-op**：生产装配路径暂无 `setQuotaRoutingPolicy` 调用方，缝上默认挂 no-op 策略——这是 T1 的预期形态（额度感知未生效、行为零变化），后续票接装配。
 
 ## 真模型手动冒烟清单
