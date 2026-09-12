@@ -15,6 +15,8 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "node scripts/check-format-changed.mjs",
     "lint": "npm run format:check",
+    "lint:types": "node scripts/check-lint-changed.mjs",
+    "lint:oxlint": "oxlint",
     "format:changed": "node scripts/check-format-changed.mjs --write",
     "docs:check": "node scripts/check-docs.mjs",
     "test": "vitest",
@@ -66,14 +68,17 @@
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.1",
     "concurrently": "^9.2.1",
+    "electron": "39.8.10",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.0",
+    "eslint": "10.10.0",
     "happy-dom": "^20.11.1",
+    "oxlint": "1.82.0",
     "prettier": "3.8.3",
     "tsx": "^4.19.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.1",
-    "electron": "39.8.10",
-    "electron-builder": "^26.0.12",
-    "esbuild": "^0.25.0"
+    "typescript-eslint": "8.70.0",
+    "vitest": "^4.1.1"
   },
   "overrides": {
     "libsignal": "6.0.0"

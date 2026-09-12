@@ -60,6 +60,19 @@ jobs:
           # 本仓库纪律：一切改造在 develop——lint 口径对 origin/develop 的分叉 diff 负责
           FORMAT_BASE_REF: origin/develop
 
+      # 规约层增量门禁（#27）：只对相对 origin/develop 分叉的改动 TS/JS 文件负责，
+      # 存量不追。规则集最小起步（AGENTS.md「三层门禁」），warning 即失败
+      #（脚本内 --max-warnings=0）；豁免须行级标注理由。
+      - name: ESLint incremental gate (changed files)
+        run: npm run lint:types
+        env:
+          LINT_BASE_REF: origin/develop
+
+      # oxlint 全仓快扫（#27）：informational 档——存量基线 164 warnings
+      #（见 docs/limitations.md），不 gate；只在出现 error 级诊断时失败。
+      - name: oxlint full-repo sweep (informational)
+        run: npm run lint:oxlint
+
       - name: Unit tests
         run: npm test -- --run
 
