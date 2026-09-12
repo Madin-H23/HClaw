@@ -1,6 +1,7 @@
 /**
  * Shared task utilities used by CreateTaskForm, TaskCard, and TaskDetail.
  */
+import { CHANNEL_REGISTRY } from '../channel-registry';
 
 export const INTERVAL_UNITS = [
   { label: '分钟', ms: 60_000 },
@@ -8,15 +9,11 @@ export const INTERVAL_UNITS = [
   { label: '天', ms: 86_400_000 },
 ] as const;
 
-export const CHANNEL_OPTIONS = [
-  { key: 'feishu', label: '飞书' },
-  { key: 'telegram', label: 'Telegram' },
-  { key: 'qq', label: 'QQ' },
-  { key: 'wechat', label: '微信' },
-  { key: 'dingtalk', label: '钉钉' },
-  { key: 'discord', label: 'Discord' },
-  { key: 'whatsapp', label: 'WhatsApp' },
-] as const;
+// ADR-0009：通知渠道选项从渠道注册表派生（key/显示名/顺序均取自注册表）
+export const CHANNEL_OPTIONS = CHANNEL_REGISTRY.map((entry) => ({
+  key: entry.id,
+  label: entry.label,
+}));
 
 /** Format interval milliseconds to human-readable string (e.g. "5 分钟"). */
 export function formatInterval(ms: string | number): string {

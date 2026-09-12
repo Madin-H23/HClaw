@@ -16362,16 +16362,14 @@ async function processAgentConversation(
       runtimeAgentId: agentId,
       runtimeAgentKind: agent.kind,
     });
-    const miniclawOwnerProfileEnabled = isMiniclawOwnerProfileRuntimeEligible(
-      {
-        group: effectiveGroup,
-        profile: agentProfile,
-        turnId: lastProcessed.id,
-        isScheduledTask: Boolean(lastProcessed.task_id),
-        runtimeAgentId: agentId,
-        runtimeAgentKind: agent.kind,
-      },
-    );
+    const miniclawOwnerProfileEnabled = isMiniclawOwnerProfileRuntimeEligible({
+      group: effectiveGroup,
+      profile: agentProfile,
+      turnId: lastProcessed.id,
+      isScheduledTask: Boolean(lastProcessed.task_id),
+      runtimeAgentId: agentId,
+      runtimeAgentKind: agent.kind,
+    });
     const containerInput: ContainerInput = {
       prompt,
       sessionId,

@@ -5,6 +5,8 @@ import type {
   ChannelProvider,
 } from '../stores/channel-accounts';
 
+import { CHANNEL_LABELS } from '../channel-registry';
+
 export type ChannelAuthMode = 'credentials' | 'bot_token' | 'qr_session';
 
 export interface CredentialField {
@@ -45,7 +47,7 @@ export interface ChannelProviderOption {
 export const CHANNEL_PROVIDER_OPTIONS: ChannelProviderOption[] = [
   {
     value: 'feishu',
-    label: '飞书',
+    label: CHANNEL_LABELS.feishu,
     description: '通过飞书自建应用接收消息，Owner 会在首次私聊时自动识别。',
     authMode: 'credentials',
     credentials: [
@@ -82,7 +84,7 @@ export const CHANNEL_PROVIDER_OPTIONS: ChannelProviderOption[] = [
   },
   {
     value: 'telegram',
-    label: 'Telegram',
+    label: CHANNEL_LABELS.telegram,
     description: '使用 Bot Token 接入；保存后通过配对码授权具体聊天。',
     authMode: 'bot_token',
     credentials: [
@@ -119,7 +121,7 @@ export const CHANNEL_PROVIDER_OPTIONS: ChannelProviderOption[] = [
   },
   {
     value: 'qq',
-    label: 'QQ',
+    label: CHANNEL_LABELS.qq,
     description: '使用 QQ Bot 应用凭证接入；保存后通过配对码授权聊天。',
     authMode: 'credentials',
     credentials: [
@@ -156,7 +158,7 @@ export const CHANNEL_PROVIDER_OPTIONS: ChannelProviderOption[] = [
   },
   {
     value: 'wechat',
-    label: '微信',
+    label: CHANNEL_LABELS.wechat,
     description: '创建账号后使用微信扫码授权，再通过配对码授权具体微信会话。',
     authMode: 'qr_session',
     credentials: [],
@@ -175,7 +177,7 @@ export const CHANNEL_PROVIDER_OPTIONS: ChannelProviderOption[] = [
   },
   {
     value: 'dingtalk',
-    label: '钉钉',
+    label: CHANNEL_LABELS.dingtalk,
     description: '通过钉钉企业内部应用的机器人凭证接入。',
     authMode: 'credentials',
     credentials: [
@@ -212,7 +214,7 @@ export const CHANNEL_PROVIDER_OPTIONS: ChannelProviderOption[] = [
   },
   {
     value: 'discord',
-    label: 'Discord',
+    label: CHANNEL_LABELS.discord,
     description: '使用 Discord Developer Portal 中的 Bot Token 接入。',
     authMode: 'bot_token',
     credentials: [
@@ -243,7 +245,7 @@ export const CHANNEL_PROVIDER_OPTIONS: ChannelProviderOption[] = [
   },
   {
     value: 'whatsapp',
-    label: 'WhatsApp',
+    label: CHANNEL_LABELS.whatsapp,
     description: '创建账号后使用 WhatsApp 扫码关联设备，无需填写账号标识。',
     authMode: 'qr_session',
     credentials: [],

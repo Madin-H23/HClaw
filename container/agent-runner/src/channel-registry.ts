@@ -64,7 +64,9 @@ export const CHANNEL_REGISTRY = [
 function idsOf<T extends readonly { readonly id: string }[]>(
   entries: T,
 ): { -readonly [K in keyof T]: T[K]['id'] } {
-  return entries.map((entry) => entry.id) as { -readonly [K in keyof T]: T[K]['id'] };
+  return entries.map((entry) => entry.id) as {
+    -readonly [K in keyof T]: T[K]['id'];
+  };
 }
 
 export const CHANNEL_IDS = idsOf(CHANNEL_REGISTRY);

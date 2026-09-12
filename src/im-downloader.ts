@@ -135,7 +135,11 @@ export async function saveDownloadedFile(
   try {
     fs.writeFileSync(fd, buffer);
   } finally {
-    try { fs.closeSync(fd); } catch { /* ignore */ }
+    try {
+      fs.closeSync(fd);
+    } catch {
+      /* ignore */
+    }
   }
 
   // 返回相对于群组工作区根目录的路径
