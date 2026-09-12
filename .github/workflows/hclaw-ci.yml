@@ -55,3 +55,39 @@ jobs:
       # 的内容契约冲突已立票 #16（needs-triage），裁决后移除此豁免。
       - name: Unit tests
         run: npm test -- --run --exclude 'tests/frontend-product-terminology.test.ts'
+
+  package-windows:
+    # T8（ADR-0007）：Windows NSIS 打包 job——桌面壳 + 内嵌 server 一键安装包，
+    # 产物以 artifact 供下载。加固三件套沿 verify job（actions 按 SHA 固定 /
+    # workflow 级 contents: read / timeout + concurrency）。
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix web ci
+          npm --prefix container/agent-runner ci
+
+      # better-sqlite3 按 electron ABI 重编（prebuild 下载），打包后自动恢复
+      # node ABI；electron 运行时复用 npm ci 装好的 node_modules/electron/dist
+      #（electron-builder.yml electronDist），不重复下载。
+      - name: Package NSIS installer (x64)
+        run: npm run desktop:package:win
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: HClaw-windows-x64-setup
+          path: electron/release/*.exe
+          if-no-files-found: error
