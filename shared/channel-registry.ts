@@ -22,7 +22,11 @@ export interface ChannelRegistryEntry {
   readonly label: string;
   /** IM JID 前缀（含尾随冒号），如 'feishu:' */
   readonly jidPrefix: string;
-  /** 连接器工厂 key：对应 src/im-channel.ts 的 create*Channel 适配器 */
+  /**
+   * 连接器工厂 key：对应 src/im-channel.ts 的 create*Channel 适配器。
+   * 当前为 documentation-only（无运行时消费方，准确性靠人工对齐适配器；
+   * 后续如需接线消费，在本字段上补编译期对账即可）。
+   */
   readonly factoryKey: string;
 }
 
