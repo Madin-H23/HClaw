@@ -8,14 +8,17 @@
 ## 0. 全局前置（一次性）
 
 - [ ] HClaw 服务已启动，admin 账号可登录工作台（Web UI）
-- [ ] 定位数据目录：默认 `~/.miniclaw/`（桌面内嵌版在 `%APPDATA%/HClaw/server/`，
-      下文以 `<DATA_DIR>` 指代）
+- [ ] 定位数据目录（下文以 `<DATA_DIR>` 指代）。`DATA_DIR` 在代码里锚定
+      `process.cwd()` 下的 `data`（`src/config.ts` 的 `path.resolve(PROJECT_ROOT, 'data')`），
+      随运行形态有两个落点：- **开发/源码态**（仓库根执行 `npm run dev` / `npm start`）：`<仓库根>/data` - **桌面内嵌态**（HClaw 桌面版）：`%APPDATA%/HClaw/server/data`
+      （内嵌引导先 chdir 到 `%APPDATA%/HClaw/server`，再落 `data` 子目录）- 拿不准就看 `<DATA_DIR>` 下是否有 `db/messages.db` 与 `config/` 子目录
 - [ ] （冒烟前）了解频控配置文件：`<DATA_DIR>/config/proactive-message.json`
       （不存在=缺省最少节制：10 条/分钟、无冷却、无静默窗口）
 
 三渠道私聊目标的取法统一：**用手机/客户端给机器人发一条私聊消息**，工作台
 自动登记该会话，然后从会话 jid 里取目标 id（三渠道形态不同，见各节）。查
-已登记会话 jid 的命令（任一 SQLite 工具，或用仓库自带 better-sqlite3）：
+已登记会话 jid 的命令（任一 SQLite 工具，或用仓库自带 better-sqlite3；
+**须在仓库根执行**——`require('better-sqlite3')` 靠仓库 `node_modules` 解析）：
 
 ```bash
 node -e "const db=require('better-sqlite3')('<DATA_DIR>/db/messages.db');console.table(db.prepare(\"SELECT jid,name FROM registered_groups WHERE jid LIKE '%:%'\").all())"
@@ -25,7 +28,7 @@ node -e "const db=require('better-sqlite3')('<DATA_DIR>/db/messages.db');console
 
 | 渠道 | jid 形态                | `defaultTarget` 填法                        |
 | ---- | ----------------------- | ------------------------------------------- |
-| 飞书 | `feishu:ou_xxxxxxxx`    | `ou_xxxxxxxx`（open*id，`ou*` 前缀）        |
+| 飞书 | `feishu:ou_xxxxxxxx`    | `ou_xxxxxxxx`（`open_id`，`ou_` 前缀）      |
 | 微信 | `wechat:wxid_xxxxxxxx`  | `wxid_xxxxxxxx`（裸 wxid，不带前缀）        |
 | 钉钉 | `dingtalk:c2c:xxxxxxxx` | `c2c:xxxxxxxx`（兼容 `dingtalk:c2c:` 前缀） |
 
@@ -37,6 +40,8 @@ node -e "const db=require('better-sqlite3')('<DATA_DIR>/db/messages.db');console
 
 - [ ] 打开 https://open.feishu.cn/app → 「创建企业自建应用」，记下名称
 - [ ] 「凭证与基础信息」页复制 **App ID** 与 **App Secret**
+- [ ] 「添加应用能力」→ 添加 **机器人** 能力（不加这步，飞书客户端搜不到
+      该机器人、也没法对它私聊，后续步骤全部无从谈起）
 - [ ] 「权限管理」开通：`im:message`（获取与发送单聊、群组消息）——至少
       `im:message:send_as_bot`（以应用身份发消息）
 - [ ] 「事件与回调」：订阅方式保持**长连接**（WebSocket），订阅「接收消息

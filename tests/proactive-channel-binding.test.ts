@@ -152,6 +152,21 @@ describe('im-manager.getConnectedChannel (read-only binding seam, #25)', () => {
     await manager.disconnectAll();
   });
 
+  test('accountId omitted also matches legacy bare-key connections (no account)', async () => {
+    createActiveUser('admin-3b', 'admin');
+    // 不传 accountId 的 connectChannel = legacy 裸键连接（键=channelType 本身）
+    const bare = fakeChannel({ channelType: 'feishu' });
+    const manager = new IMConnectionManager();
+    await connect(manager, 'admin-3b', 'feishu', bare);
+
+    // 裸键条目在缺省枚举中可命中（getConnectedChannelAccountIds 不收集裸键，
+    // 本方法口径更宽——见方法注释）
+    expect(manager.getConnectedChannel('admin-3b', 'feishu')).toBe(bare);
+    expect(manager.getConnectedChannel('admin-3b', 'wechat')).toBeUndefined();
+
+    await manager.disconnectAll();
+  });
+
   test('accountId omitted resolves to the first connected+allowed entry of the type', async () => {
     createActiveUser('admin-3', 'admin');
     for (const id of ['acct-3a', 'acct-3b']) {

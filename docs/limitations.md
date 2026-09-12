@@ -170,7 +170,9 @@ T1 按 ADR-0005 完成**产品身份面**替换：electron 壳（窗口标题 / 
 - 投递解析链：admin 用户（`listUsers` 首个 active admin）→
   `imManager.getConnectedChannel`（只读，复用 `isOutboundConnectionAllowed`
   出站门控）→ `bindImChannelAdapter`。含义：①**没有 admin 用户=全部渠道
-  skipped**（单 admin 假设，沿 ADR-0008「MVP 仅 admin 私聊」）；②渠道账号
+  skipped**（单 admin 假设，沿 ADR-0008「MVP 仅 admin 私聊」；多个 admin 时
+  取 `listUsers` 排序首位——active 优先、同状态按 `created_at DESC`，即
+  **最新创建的 active admin**，与其余 admin 面的既有取向一致）；②渠道账号
   停用/未连接=该渠道 skipped（socket 在 ≠ 有权发，门控不豁免）；③同渠道多
   账号时取**连接序第一个**可用账号（未做按账号指定目标，多账号精确选择留
   后续票，向导走单账号路径）。

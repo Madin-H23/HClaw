@@ -1173,9 +1173,12 @@ export class IMConnectionManager {
    * findChannelForJid/isChannelAccountConnected (reuses
    * isOutboundConnectionAllowed; a tracked socket alone is not authority to
    * send), key built via the private channelKey() — callers never see or
-   * rebuild the internal key shape. With accountId omitted, the first
-   * connected+allowed channel of that type wins (Map insertion order, same
-   * enumeration semantics as getConnectedChannelAccountIds). Returns
+   * rebuild the internal key shape. With accountId omitted, entries of that
+   * type are enumerated in Map insertion order and the first connected+allowed
+   * one wins — including legacy bare-key connections (channel registered
+   * without an account); this is deliberately wider than
+   * getConnectedChannelAccountIds, which only collects account-scoped entries.
+   * Returns
    * undefined — never throws — when the user is unknown/disabled, the account
    * is disabled/foreign, or nothing of that type is connected.
    */
