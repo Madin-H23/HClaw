@@ -23,6 +23,11 @@ import type {
 export const MAX_ADDITIONAL_MOUNTS = 8;
 export const ADDITIONAL_MOUNT_CONTAINER_ROOT = '/workspace/extra';
 
+// Windows hosts express absolute paths with a drive letter (`C:\dir`), whose
+// colon is part of the platform's canonical path form. Any other colon — and
+// every colon on POSIX hosts — stays illegal for host mount paths.
+const WIN32_DRIVE_ABSOLUTE_HOST_PATH_RE = /^[A-Za-z]:[\\/]/;
+
 const DEFAULT_BLOCKED_PATTERNS = [
   '.ssh',
   '.gnupg',
@@ -485,9 +490,23 @@ export function validateMount(
       reason: `Host path must be absolute: "${mount.hostPath}"`,
     };
   }
+  // Host path colon policy (Windows adaptation, upstream bug: every absolute
+  // Windows path contains a drive colon, so the blanket colon ban made host
+  // mounting unusable on Windows). Allow exactly ONE colon, at index 1,
+  // followed by a path separator — the Windows drive-letter prefix — and only
+  // when the server itself runs on win32. Any other colon (mid-path colons,
+  // drive-relative `C:foo`, a second colon) is still rejected, as is every
+  // colon on POSIX hosts. Control characters remain rejected on all platforms.
+  const firstColon = mount.hostPath.indexOf(':');
+  const colonIsDrivePrefixOnly =
+    firstColon !== -1 &&
+    firstColon === mount.hostPath.lastIndexOf(':') &&
+    process.platform === 'win32' &&
+    firstColon === 1 &&
+    WIN32_DRIVE_ABSOLUTE_HOST_PATH_RE.test(mount.hostPath);
   if (
     CONTAINER_CONTROL_CHARS_RE.test(mount.hostPath) ||
-    mount.hostPath.includes(':')
+    (firstColon !== -1 && !colonIsDrivePrefixOnly)
   ) {
     return {
       allowed: false,

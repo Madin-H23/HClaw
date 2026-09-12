@@ -35,7 +35,17 @@ function killScriptProcessTree(child: ChildProcess): void {
   const pid = child.pid;
   if (!pid) return;
   if (process.platform === 'win32') {
-    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], () => undefined);
+    // A failed tree-kill leaves the script running while the runner already
+    // reports it aborted — operators must be able to see why. Failure stays
+    // non-fatal: the close handler settles the run either way.
+    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], (error) => {
+      if (error) {
+        logger.warn(
+          { pid, err: error },
+          'taskkill failed to terminate script process tree',
+        );
+      }
+    });
     return;
   }
   try {
@@ -110,7 +120,11 @@ export async function runScript(
           GROUP_FOLDER: groupFolder,
           HOME: process.env.HOME || cwd,
         },
-        shell: '/bin/sh',
+        // Windows: resolve to %ComSpec% (cmd.exe). The hardcoded /bin/sh does
+        // not exist on Windows, which made every host script fail with spawn
+        // ENOENT and left the taskkill tree-kill branch below dead code.
+        // POSIX keeps /bin/sh (Windows adaptation #15).
+        shell: process.platform === 'win32' ? true : '/bin/sh',
         detached: process.platform !== 'win32',
       });
       const timeout = setTimeout(() => {

@@ -4,6 +4,14 @@ import path from 'node:path';
 
 import { resolveTurnOutcome } from '../src/turn-outcome.js';
 
+// Windows 适配（#11）：core.autocrlf=true 检出使工作区源码为 CRLF，而本测试
+// 的文本断言（跨行 needle / 格式契约）以 LF 为基准。读取源码后统一归一为
+// LF；POSIX 检出无 \r，替换为 no-op，断言内容一字不变。
+const readLf = (file: string): string =>
+  fs
+    .readFileSync(path.join(process.cwd(), file), 'utf8')
+    .replace(/\r\n/g, '\n');
+
 describe('resolveTurnOutcome', () => {
   test('retries an in-flight close with no reply or healthy completion', () => {
     expect(
@@ -98,10 +106,7 @@ describe('resolveTurnOutcome', () => {
   });
 
   test('wires prompt and startup-budget validation errors to deterministic completion', () => {
-    const main = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
-      'utf8',
-    );
+    const main = readLf('src/index.ts');
     const branch = main.slice(
       main.indexOf("errorDetail.startsWith('context_budget_exceeded:')"),
       main.indexOf('// 上下文溢出错误'),
@@ -114,10 +119,7 @@ describe('resolveTurnOutcome', () => {
   });
 
   test('does not treat a DB-only interrupted partial as a delivered close reply', () => {
-    const main = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
-      'utf8',
-    );
+    const main = readLf('src/index.ts');
     const closedBranch = main.slice(
       main.indexOf("if (output.status === 'closed')"),
       main.indexOf('// Query 出错时'),
@@ -130,10 +132,7 @@ describe('resolveTurnOutcome', () => {
   });
 
   test('commits an already-delivered reply when the runner throws before returning output', () => {
-    const main = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
-      'utf8',
-    );
+    const main = readLf('src/index.ts');
     const missingOutputBranch = main.slice(
       main.indexOf('if (!output) {'),
       main.indexOf('const stopDisposition ='),
@@ -147,10 +146,7 @@ describe('resolveTurnOutcome', () => {
   });
 
   test('does not mark or commit a final reply until the physical channel ACKs it', () => {
-    const main = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
-      'utf8',
-    );
+    const main = readLf('src/index.ts');
     const deliveryBranch = main.slice(
       main.indexOf('const replySendOutcome = await sendMessageWithOutcome'),
       main.indexOf('// Only reset idle timer on actual results'),
@@ -172,10 +168,7 @@ describe('resolveTurnOutcome', () => {
   });
 
   test('routes streaming-card local images through the exact turn outbox and includes their ACK', () => {
-    const main = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
-      'utf8',
-    );
+    const main = readLf('src/index.ts');
     const cardAttachmentBranch = main.slice(
       main.indexOf(
         '// Streaming card strips local image references (only img_xxx keys',
@@ -203,10 +196,7 @@ describe('resolveTurnOutcome', () => {
   });
 
   test('does not emit a second channel error after an uncertain durable file send', () => {
-    const main = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
-      'utf8',
-    );
+    const main = readLf('src/index.ts');
     const fileBranch = main.slice(
       main.indexOf('const regularFileOutboxRef'),
       main.indexOf("'No IM route for send_file, skipped IM delivery'"),
@@ -221,10 +211,7 @@ describe('resolveTurnOutcome', () => {
   });
 
   test('returns a negative MCP image acknowledgement when physical delivery is unconfirmed', () => {
-    const main = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
-      'utf8',
-    );
+    const main = readLf('src/index.ts');
     const imageBranch = main.slice(
       main.indexOf('let regularImageDelivered'),
       main.indexOf("'IPC image sent'"),
@@ -239,10 +226,7 @@ describe('resolveTurnOutcome', () => {
   });
 
   test('interrupts and commits an uncertain turn instead of scheduling another Agent loop', () => {
-    const main = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
-      'utf8',
-    );
+    const main = readLf('src/index.ts');
     const mainCleanup = main.slice(
       main.indexOf('if (channelTurnRuntimes.size > 0)'),
       main.indexOf('// ── 保存中断内容到数据库'),
@@ -279,10 +263,7 @@ describe('resolveTurnOutcome', () => {
   });
 
   test('projects MCP send_message to Web but delivers raw native content through the exact input Outbox', () => {
-    const main = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
-      'utf8',
-    );
+    const main = readLf('src/index.ts');
     const branchStart = main.indexOf(
       '// Feishu card JSON: store extracted markdown for web',
     );

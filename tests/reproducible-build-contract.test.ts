@@ -4,7 +4,11 @@ import { check as prettierCheck, resolveConfig } from 'prettier';
 import { describe, expect, test } from 'vitest';
 
 const root = process.cwd();
-const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
+// Windows 适配（#11）：prettierCheck 默认 endOfLine: lf，autocrlf 检出的 CRLF
+// 会被误判为格式违规。读取后归一 LF（POSIX 检出无 \r，为 no-op）——本测试的
+// 格式契约针对内容排版，而非 git 检出行尾。
+const read = (file: string) =>
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 
 const lockfiles = [
   'package-lock.json',

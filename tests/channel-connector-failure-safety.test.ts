@@ -2,8 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
+// Windows 适配（#11）：core.autocrlf=true 检出使工作区源码为 CRLF，而断言以
+// LF 文本为基准（跨行 needle）。读取后归一为 LF；POSIX 检出无 \r，为 no-op。
 const source = (file: string) =>
-  fs.readFileSync(path.resolve(process.cwd(), file), 'utf8');
+  fs
+    .readFileSync(path.resolve(process.cwd(), file), 'utf8')
+    .replace(/\r\n/g, '\n');
 
 describe('provider connector initial failure safety contract', () => {
   test('manager cleans rejected connectors before releasing credential claims', () => {

@@ -2,16 +2,16 @@ import fs from 'node:fs';
 
 import { describe, expect, test } from 'vitest';
 
+// Windows 适配（#11）：core.autocrlf=true 检出使工作区源码为 CRLF，而本测试
+// 的文本断言（跨行 needle / 格式契约）以 LF 为基准。读取源码后统一归一为
+// LF；POSIX 检出无 \r，替换为 no-op，断言内容一字不变。
+const readLf = (file: string): string =>
+  fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+
 describe('dynamic Workflow product contract', () => {
   test('uses official SDK task metadata and output files', () => {
-    const processor = fs.readFileSync(
-      'container/agent-runner/src/stream-processor.ts',
-      'utf8',
-    );
-    const projection = fs.readFileSync(
-      'container/agent-runner/src/workflow-run.ts',
-      'utf8',
-    );
+    const processor = readLf('container/agent-runner/src/stream-processor.ts');
+    const projection = readLf('container/agent-runner/src/workflow-run.ts');
 
     expect(processor).toContain('task_started');
     expect(processor).toContain('task_type');
@@ -22,14 +22,8 @@ describe('dynamic Workflow product contract', () => {
   });
 
   test('renders workflow and normal answer as separate presentation regions', () => {
-    const bubble = fs.readFileSync(
-      'web/src/components/chat/MessageBubble.tsx',
-      'utf8',
-    );
-    const card = fs.readFileSync(
-      'web/src/components/chat/WorkflowRunCard.tsx',
-      'utf8',
-    );
+    const bubble = readLf('web/src/components/chat/MessageBubble.tsx');
+    const card = readLf('web/src/components/chat/WorkflowRunCard.tsx');
 
     expect(bubble).toContain('<WorkflowRunCard');
     expect(bubble).toContain('<MarkdownRenderer');
@@ -44,18 +38,9 @@ describe('dynamic Workflow product contract', () => {
   });
 
   test('makes the Workflow card the only running progress surface', () => {
-    const list = fs.readFileSync(
-      'web/src/components/chat/MessageList.tsx',
-      'utf8',
-    );
-    const streaming = fs.readFileSync(
-      'web/src/components/chat/StreamingDisplay.tsx',
-      'utf8',
-    );
-    const projection = fs.readFileSync(
-      'container/agent-runner/src/workflow-run.ts',
-      'utf8',
-    );
+    const list = readLf('web/src/components/chat/MessageList.tsx');
+    const streaming = readLf('web/src/components/chat/StreamingDisplay.tsx');
+    const projection = readLf('container/agent-runner/src/workflow-run.ts');
 
     expect(list).toContain('isHeldBackgroundAcknowledgement');
     expect(streaming).toContain('hasWorkflowCards');
@@ -65,17 +50,14 @@ describe('dynamic Workflow product contract', () => {
   });
 
   test('uses the same final-only presentation in conversation previews', () => {
-    const sidebar = fs.readFileSync(
-      'web/src/components/chat/SessionSidebar.tsx',
-      'utf8',
-    );
+    const sidebar = readLf('web/src/components/chat/SessionSidebar.tsx');
 
     expect(sidebar).toContain('getPresentedMessageContent');
   });
 
   test('keeps running Workflow state across a held background acknowledgement', () => {
-    const backend = fs.readFileSync('src/index.ts', 'utf8');
-    const store = fs.readFileSync('web/src/stores/chat.ts', 'utf8');
+    const backend = readLf('src/index.ts');
+    const store = readLf('web/src/stores/chat.ts');
 
     expect(backend).toContain('activeWorkflowRuns');
     expect(backend).toContain('activeAgentWorkflowRuns');

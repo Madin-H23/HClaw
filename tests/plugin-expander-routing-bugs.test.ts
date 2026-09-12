@@ -26,12 +26,18 @@
  * plus a faithful shadow of the cursor-advance algorithm wired into src/index.ts.
  */
 
+import path from 'node:path';
+
 import { describe, expect, test } from 'vitest';
 
 import { makeExpandContext } from '../src/plugin-expander-context.js';
 
 // ─── P2-bug-4: makeExpandContext customCwd in host mode ─────────────────────
 
+// Windows 适配（#12）：makeExpandContext 对 customCwd / groupsDir 回退路径做
+// path.resolve（POSIX 上绝对路径输入为恒等变换，与原字面量断言等价；Windows
+// 上会把盘符相对路径解析为当前盘的绝对路径）。期望值用 path.resolve 同源
+// 构造，断言语义（host 模式 cwd=解析后的 customCwd / groupsDir 拼接）不变。
 describe('makeExpandContext — P2-bug-4 customCwd honored in host mode', () => {
   test('host mode + customCwd → cwd is the customCwd path', () => {
     const ctx = makeExpandContext({
@@ -44,7 +50,7 @@ describe('makeExpandContext — P2-bug-4 customCwd honored in host mode', () => 
       containerName: null,
     });
     expect(ctx).not.toBeNull();
-    expect(ctx?.cwd).toBe('/Users/alice/projects/repo');
+    expect(ctx?.cwd).toBe(path.resolve('/Users/alice/projects/repo'));
     expect(ctx?.executionMode).toBe('host');
   });
 
@@ -58,7 +64,7 @@ describe('makeExpandContext — P2-bug-4 customCwd honored in host mode', () => 
       groupsDir: '/data/groups',
       containerName: null,
     });
-    expect(ctx?.cwd).toBe('/data/groups/home-alice');
+    expect(ctx?.cwd).toBe(path.resolve('/data/groups', 'home-alice'));
   });
 
   test('container mode → /workspace/group regardless of customCwd', () => {
@@ -300,7 +306,7 @@ describe('makeExpandContext — P2-bug-3 sibling-resolved customCwd propagates',
       groupsDir: '/data/groups',
       containerName: 'c-main',
     });
-    expect(ctx?.cwd).toBe('/Users/admin/repo');
+    expect(ctx?.cwd).toBe(path.resolve('/Users/admin/repo'));
     expect(ctx?.userId).toBe('admin');
     expect(ctx?.executionMode).toBe('host');
     expect(ctx?.containerName).toBe('c-main');
