@@ -375,9 +375,14 @@ export function CreateTaskForm({
         </p>
       )}
       {connectedOptions.length > 0 && (
-        <p className="mt-1 text-xs text-muted-foreground">
-          选择任务结果推送的 IM 渠道，默认推送到所有已连接渠道
-        </p>
+        <>
+          <p className="mt-1 text-xs text-muted-foreground">
+            选择任务结果推送的 IM 渠道，默认推送到所有已连接渠道
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            勾选后，任务每次完成还会向该渠道的默认私聊会话主动推送结果（受频控节制）；原有的错误/绑定通知另行发送，同一渠道可能重复收到
+          </p>
+        </>
       )}
     </div>
   );

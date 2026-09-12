@@ -109,6 +109,11 @@ import {
   tryCleanupCompletedIsolatedTaskRunIpc,
 } from './isolated-task-ipc.js';
 import { getScriptTaskHostExecutionError } from './script-task-policy.js';
+import type {
+  ProactiveTriggerDeliverySummary,
+  SchedulerProactiveTriggerInput,
+} from './proactive-message/trigger-dispatch.js';
+import { isFailedDeliveryOutcome } from './proactive-message/trigger-dispatch.js';
 
 export function shouldFinalizeScheduledRunOutput(
   output: Pick<
@@ -498,6 +503,17 @@ export interface SchedulerDependencies {
   retryTaskNotification?: (
     payload: TaskRunAtomicNotificationPayload,
   ) => Promise<TaskRunNotificationReceipt>;
+  /**
+   * 批二 B4（票 #24）触发源缝：任务完成后把结果按任务声明渠道（notify_channels）
+   * 投递到主动消息频控入口。实现由宿主注入（生产绑定见
+   * proactive-message/trigger-dispatch.ts 的 createSchedulerProactiveNotifier）；
+   * **契约：实现必须自行承接一切故障、永不 reject**（分发器已内化单渠道故障，
+   * 宿主闭包兜底，调度器调用点仍有最终 catch——三层防御）。undefined = 未装配，
+   * 行为与上游完全一致（no-op，测试钉死）。
+   */
+  notifyTaskResult?: (
+    input: SchedulerProactiveTriggerInput,
+  ) => Promise<ProactiveTriggerDeliverySummary>;
   assistantName: string;
 }
 
@@ -796,6 +812,58 @@ function safeUpdateTaskRunLog(
       { taskId, runLogId, err },
       'updateTaskRunLog failed (continuing to free runningTaskIds)',
     );
+  }
+}
+
+/**
+ * 批二 B4（票 #24）：把主动消息「送达失败」痕迹并入任务运行日志（探查缝 =
+ * safeUpdateTaskRunLog/updateTaskRunLog，最小接入）。只在确有失败时二次补写：
+ * error 字段追加失败渠道与原因，status/result/duration 保持运行收尾时写定的值
+ * ——运行成败语义不因投递翻转（任务执行成功但结果没送达，是运行日志该留痕的
+ * 事实，不是任务失败）。全量结果（含 hold/discard/skipped 的压制原因）在主动
+ * 消息审计库可查，运行日志只留「送达失败」这一类需要巡检的痕迹。
+ */
+function appendProactiveDeliveryFailureTrace(
+  taskId: string,
+  runLogId: number,
+  finalPatch: Parameters<typeof updateTaskRunLog>[1],
+  summary: ProactiveTriggerDeliverySummary,
+): void {
+  const failures = summary.attempts
+    .filter((attempt) => isFailedDeliveryOutcome(attempt.outcome))
+    .map(
+      (attempt) => `${attempt.channelId}（${attempt.reason ?? '未知原因'}）`,
+    );
+  if (failures.length === 0) return;
+  const suffix = `主动消息投递失败：${failures.join('；')}`;
+  safeUpdateTaskRunLog(taskId, runLogId, {
+    ...finalPatch,
+    error: finalPatch.error ? `${finalPatch.error}；${suffix}` : suffix,
+  });
+}
+
+/**
+ * 批二 B4（票 #24）：任务完成点的主动消息投递调用（agent/script 两个完成点
+ * 共用）。承接 B3 审查移交②：每次触发包一层兜底 catch + 结构化日志——注入
+ * 闭包与分发器承诺不 reject，此 catch 是最终防线，任何意外都不得逃进调度
+ * 收尾路径（更不得炸调度循环）。未装配 dep（undefined）或任务未声明渠道或
+ * 无可投内容 → no-op（与上游行为一致）。与旧投递路径并存，双投收敛策略
+ * 悬置 B5（proactive-message/trigger-dispatch.ts 文件头）。
+ */
+async function notifyTaskResultProactive(
+  taskId: string,
+  deps: SchedulerDependencies,
+  input: Omit<SchedulerProactiveTriggerInput, 'taskId'>,
+): Promise<ProactiveTriggerDeliverySummary | null> {
+  if (!deps.notifyTaskResult) return null;
+  try {
+    return await deps.notifyTaskResult({ taskId, ...input });
+  } catch (err) {
+    logger.error(
+      { taskId, runId: input.runId, err },
+      '主动消息投递意外抛错（调度器兜底承接）；不影响任务收尾与调度循环',
+    );
+    return null;
   }
 }
 
@@ -1461,11 +1529,11 @@ async function runTaskInner(
   }
 
   const cleanedResult = result ? stripAgentInternalTags(result) : null;
+  // 可投递内容（B4 提到外层：主动消息投递与 storeResultAndNotify 共用同一份）
+  const taskSessionText = error
+    ? `执行出错: ${error}`
+    : cleanedResult?.trim() || null;
   if (deps.storeResultAndNotify) {
-    const taskSessionText = error
-      ? `执行出错: ${error}`
-      : cleanedResult?.trim() || null;
-
     if (taskSessionText) {
       try {
         await deps.storeResultAndNotify(effectiveJid, taskSessionText, {
@@ -1519,6 +1587,40 @@ async function runTaskInner(
           'Failed to project scheduled task result to source workspace',
         );
       }
+    }
+  }
+
+  // 批二 B4（票 #24）：任务结果按声明渠道（notify_channels）投递主动消息，
+  // 经频控入口（notify）节制后送达渠道默认私聊目标。触发源接口与调度器解耦
+  // （本文件只生产 SchedulerProactiveTriggerInput，实现见
+  // proactive-message/trigger-dispatch.ts）；补发语义 = 本完成点每次触发照常
+  // 调用（hold 由下次触发自然重投，此处不建重试/跳过逻辑）。送达失败痕迹经
+  // appendProactiveDeliveryFailureTrace 留在任务运行日志。与上方旧投递路径
+  // （storeResultAndNotify）并存，双投收敛策略悬置 B5（见
+  // trigger-dispatch.ts 文件头「与上游旧投递路径的关系」）。
+  if (
+    task.notify_channels &&
+    task.notify_channels.length > 0 &&
+    taskSessionText
+  ) {
+    const summary = await notifyTaskResultProactive(task.id, deps, {
+      runId: options?.taskRunId ?? options?.durableRun?.id ?? null,
+      triggerType: options?.manualRun ? 'manual' : 'scheduled',
+      notifyChannels: task.notify_channels,
+      content: `【定时任务 ${scheduledTaskDisplayName(task)}】\n${taskSessionText}`,
+    });
+    if (summary) {
+      appendProactiveDeliveryFailureTrace(
+        task.id,
+        runLogId,
+        {
+          duration_ms: lastOutputTime - startTime,
+          status: error ? 'error' : 'success',
+          result,
+          error,
+        },
+        summary,
+      );
     }
   }
 
@@ -1748,6 +1850,10 @@ async function runScriptTaskInner(
 
   let result: string | null = null;
   let error: string | null = null;
+  // 批二 B4：主动消息投递（try 内只备内容，durationMs 定格后投递；送达失败
+  // 痕迹在主收尾写定运行日志后补写）
+  let proactiveContent: string | null = null;
+  let proactiveDeliverySummary: ProactiveTriggerDeliverySummary | null = null;
 
   try {
     // Script tasks execute directly on the host even when their source
@@ -1807,6 +1913,19 @@ async function runScriptTaskInner(
           }
         }
       }
+
+      // 批二 B4（票 #24）：脚本任务结果按声明渠道投递主动消息（探活/晨检类
+      // 薄迁移主场景）。此处只备好内容——实际投递在 durationMs 定格之后执行
+      // （投递时延不计入运行时长，对齐 agent 完成点次序：agent 的
+      // lastOutputTime 在收尾前定格，投递天然不计入）。脚本任务无 V2 运行
+      // id → runId=null。
+      if (
+        deps.notifyTaskResult &&
+        task.notify_channels &&
+        task.notify_channels.length > 0
+      ) {
+        proactiveContent = `【定时任务 ${scheduledTaskDisplayName(task)}】\n${fullText}`;
+      }
     }
 
     logger.info(
@@ -1824,6 +1943,19 @@ async function runScriptTaskInner(
 
   const durationMs = Date.now() - startTime;
 
+  // 批二 B4（票 #24）：主动消息投递（内容已在 try 内备好；durationMs 已定格，
+  // 投递时延不计入运行时长）。补发语义 = 本次照常调用，hold 靠下次触发自然
+  // 重投；兜底 catch 由 notifyTaskResultProactive 承接。与旧投递路径并存，
+  // 双投收敛策略悬置 B5（trigger-dispatch.ts 文件头）。
+  if (proactiveContent) {
+    proactiveDeliverySummary = await notifyTaskResultProactive(task.id, deps, {
+      runId: null,
+      triggerType: manualRun ? 'manual' : 'scheduled',
+      notifyChannels: task.notify_channels ?? [],
+      content: proactiveContent,
+    });
+  }
+
   // 顶层 try/finally 兜底：updateTaskRunLog/safeComputeNextRun/updateTaskAfterRun
   // 任一抛错都不能让任务永久卡在 runningTaskIds（scheduler 主循环会一直跳过）。
   try {
@@ -1838,6 +1970,21 @@ async function runScriptTaskInner(
       logger.error(
         { taskId: task.id, err },
         'updateTaskRunLog failed in script main path',
+      );
+    }
+    // 批二 B4（票 #24）：主动消息送达失败痕迹补写（主收尾已写定，此处以同值
+    // patch 追加 error 字段；status/result 不因投递翻转）
+    if (proactiveDeliverySummary) {
+      appendProactiveDeliveryFailureTrace(
+        task.id,
+        runLogId,
+        {
+          duration_ms: durationMs,
+          status: error ? 'error' : 'success',
+          result,
+          error,
+        },
+        proactiveDeliverySummary,
       );
     }
     // manualRun: preserve original next_run schedule
