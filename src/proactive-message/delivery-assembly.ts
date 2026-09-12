@@ -13,7 +13,8 @@
  *   （承接⑧）→ 读频控状态 → decideDelivery（承接⑥：静默窗口经
  *   config.quietWindows[messageKey] 注入——messageKey 即任务 key，调度配置只持
  *   taskKey 关联，窗口唯一声明在 proactive-message.json，双事实源禁令）
- *   → 送达时：解析渠道适配器（null → 跳过）→ 发送 → recordSend（承接②：
+ *   → 送达时：解析渠道适配器（null 或 resolver 违约抛错 → 跳过）→ 发送 →
+ *   recordSend（承接②：
  *   仅真实发送成功后落库，持有/丢弃/发送失败不落；sentAtMs 与决策 nowMs 同源
  *   注入，装配不自取时钟）→ prune 顺带调度（承接③）。
  *
@@ -88,7 +89,8 @@ import { RateControlStateStore } from './state-store.js';
  * 渠道发送端口：装配只依赖「能向私聊目标发纯文本」这一件事。
  * 契约：sendMessage resolve = 发送成功（装配据此 recordSend）；reject = 发送
  * 失败（装配记 send-failed 且不落库）。连接缺失必须挡在解析层（resolver 返回
- * null）——IMChannel.sendMessage 对未连接渠道只告警返回 void，不能依赖它报错。
+ * null）——上游适配器对未连接/故障的表现不一（部分路径只告警返回 void 不抛
+ * 错，部分会 throw），不能依赖 sendMessage 自身报错兜底，门控防退化。
  */
 export interface ProactiveChannelAdapter {
   sendMessage(target: string, text: string): Promise<void>;
@@ -96,8 +98,10 @@ export interface ProactiveChannelAdapter {
 
 /**
  * 适配器解析缝：仅当该渠道已连接且可出站时返回发送端口，否则返回 null
- * （装配按「渠道不可用」跳过并记结构化日志）。实现侧必须遵守「不抛错、以
- * null 表不可用」——notify 不捕获此函数的异常。
+ * （装配按「渠道不可用」跳过并记结构化日志）。契约要求「不抛错、以 null 表
+ * 不可用」；实现侧违约抛错时装配就地承接、同样折成 adapter-unavailable
+ * （仍是「不可发」语义，不违 fail-open），不让异常以 rejection 逃出 notify
+ * 可区分联合。
  */
 export type ProactiveChannelAdapterResolver = (
   channelId: ChannelId,
@@ -258,7 +262,29 @@ export class ProactiveMessageAssembly {
     }
 
     // 送达路径：解析渠道适配器（连接缺失挡在解析层，见端口契约）
-    const adapter = this.options.resolveAdapter(request.channelId);
+    let adapter: ProactiveChannelAdapter | null;
+    try {
+      adapter = this.options.resolveAdapter(request.channelId);
+    } catch (err) {
+      // resolver 违约抛错（契约要求以 null 表不可用）：就地承接折成
+      // adapter-unavailable——不可发语义不变，不让注入异常以 rejection 逃出
+      // notify 可区分联合（B4 调度器若不接住即 unhandled rejection）
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        {
+          channelId: request.channelId,
+          messageKey: request.messageKey,
+          skipKind: 'adapter-unavailable',
+          err: message,
+        },
+        '主动消息跳过：适配器解析缝抛错（resolver 契约违约），按渠道不可用处理',
+      );
+      return {
+        kind: 'skipped',
+        skipKind: 'adapter-unavailable',
+        reason: `跳过：渠道 ${request.channelId} 适配器解析失败（${message}）`,
+      };
+    }
     if (!adapter) {
       logger.warn(
         {
@@ -276,6 +302,10 @@ export class ProactiveMessageAssembly {
     }
 
     try {
+      // ⚠ B4 承接项：本装配不设 per-send 超时——adapter.sendMessage 若悬挂
+      // （上游 WS/HTTP 无内置超时的路径），notify 以 pending 承接。B4 串行接
+      // notify 时必须加 per-send 超时或并发隔离，否则一个悬挂渠道会阻塞整个
+      // 调度循环（触发节奏的保障归 B4）。
       await adapter.sendMessage(target, request.content);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

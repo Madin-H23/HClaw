@@ -89,6 +89,7 @@ function makeFixture(options?: {
   config?: Record<string, unknown>;
   nowMs?: () => number;
   adapters?: Partial<Record<ChannelId, FakeAdapter>>;
+  resolveAdapter?: ProactiveChannelAdapterResolver;
 }): Fixture {
   const dir = makeFixtureDir();
   const configPath = writeConfig(
@@ -116,7 +117,9 @@ function makeFixture(options?: {
     wechat: new FakeAdapter(),
     dingtalk: new FakeAdapter(),
   };
-  const resolver = (channelId: ChannelId) => adapters[channelId] ?? null;
+  const resolver =
+    options?.resolveAdapter ??
+    ((channelId: ChannelId) => adapters[channelId] ?? null);
   const assembly = new ProactiveMessageAssembly({
     configLoader: new ProactiveMessageConfigLoader(configPath),
     stateStore: store,
@@ -260,6 +263,41 @@ describe('该压的压', () => {
   });
 });
 
+// ─── 发送失败：不记假账（recordSend 只认真实成功，P1-1 不变量） ──
+
+describe('发送失败', () => {
+  test('适配器 reject → send-failed、不落库、WARN 含 target 与 err', async () => {
+    const { assembly, store } = makeFixture({
+      adapters: {
+        feishu: new FakeAdapter(new Error('provider 5xx')),
+        wechat: new FakeAdapter(),
+        dingtalk: new FakeAdapter(),
+      },
+    });
+    const result = await assembly.notify({
+      channelId: 'feishu',
+      messageKey: 'probe',
+      content: '会失败的发送',
+    });
+
+    expect(result).toMatchObject({ kind: 'send-failed', target: 'ou_admin' });
+    expect(result.reason).toContain('provider 5xx');
+    // 发送失败不落库（不记假账）：限速层与冷却层都查无记录
+    expect(store.recentSendTimesMs('feishu', 0)).toEqual([]);
+    expect(store.recentSendsOfKey('feishu', 'ou_admin', 'probe', 0)).toEqual(
+      [],
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channelId: 'feishu',
+        target: 'ou_admin',
+        err: 'provider 5xx',
+      }),
+      expect.stringContaining('发送失败'),
+    );
+  });
+});
+
 // ─── 目标解析：未配置跳过 + 结构化日志；适配器不可用跳过 ────────
 
 describe('目标解析与跳过', () => {
@@ -310,6 +348,34 @@ describe('目标解析与跳过', () => {
         skipKind: 'adapter-unavailable',
       }),
       expect.stringContaining('适配器不可用'),
+    );
+  });
+
+  test('resolver 抛错（契约违约）→ 折成 adapter-unavailable，异常不逃出 notify', async () => {
+    const { assembly, store } = makeFixture({
+      resolveAdapter: () => {
+        throw new Error('resolver boom');
+      },
+    });
+    // await 本身成功（resolve 而非 reject）即证明异常未逃出可区分联合
+    const result = await assembly.notify({
+      channelId: 'feishu',
+      messageKey: 'probe',
+      content: '解析缝违约',
+    });
+
+    expect(result).toMatchObject({
+      kind: 'skipped',
+      skipKind: 'adapter-unavailable',
+    });
+    expect(result.reason).toContain('resolver boom');
+    expect(store.recentSendTimesMs('feishu', 0)).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skipKind: 'adapter-unavailable',
+        err: 'resolver boom',
+      }),
+      expect.stringContaining('解析缝抛错'),
     );
   });
 });
