@@ -52,10 +52,8 @@ jobs:
           # 本仓库纪律：一切改造在 develop——lint 口径对 origin/develop 的分叉 diff 负责
           FORMAT_BASE_REF: origin/develop
 
-      # 豁免 tests/frontend-product-terminology.test.ts：其 README 断言与品牌浅改
-      # 的内容契约冲突已立票 #16（needs-triage），裁决后移除此豁免。
       - name: Unit tests
-        run: npm test -- --run --exclude 'tests/frontend-product-terminology.test.ts'
+        run: npm test -- --run
 
   test-windows:
     # #10-#15 适配批后 Windows 基线=仅 #16（豁免），产品目标平台的单测回归面进 CI。
@@ -80,9 +78,8 @@ jobs:
           npm --prefix web ci
           npm --prefix container/agent-runner ci
 
-      # 豁免同 verify：#16 内容契约冲突（needs-triage），裁决后移除。
       - name: Unit tests (Windows)
-        run: npm test -- --run --exclude 'tests/frontend-product-terminology.test.ts'
+        run: npm test -- --run
 
   package-windows:
     # T8（ADR-0007）：Windows NSIS 打包 job——桌面壳 + 内嵌 server 一键安装包，

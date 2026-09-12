@@ -66,7 +66,7 @@
 1. script run cancellation aborts only the selected process and never maps SIGKILL to exit 0（script-runner-abort）
 2. host script privilege revocation terminates the active process tree owned by the revoked user（script-runner-revocation）
 
-**簇七：品牌浅改与上游术语测试冲突（非 Windows 固有），1 例 — #16**
+**簇七：品牌浅改与上游术语测试冲突（非 Windows 固有），1 例 — #16（✅ 2026-09-12 裁决②解决：README「上游原生能力」行补回术语，CI 豁免已撤，基线归零）**
 
 1. product terminology keeps Pi runtime and subagent terminology technically explicit（frontend-product-terminology）——断言上游 README 文案 `智能体优先工作模型`；本仓库 README 已按 ADR-0005 重写为 HClaw 定位段（上游署名保留），develop 基线即失败。
 
@@ -100,10 +100,10 @@ T1 按 ADR-0005 完成**产品身份面**替换：electron 壳（窗口标题 / 
 ### 其他取舍
 
 - **lint 口径**：`npm run lint` = `npm run format:check`（prettier 对「相对 origin/develop 分叉的变更文件」整文件检查；CI 同口径，`FORMAT_BASE_REF=origin/develop`）。`scripts/check-format-changed.mjs` 顺手修复 Windows spawn 兼容（改用 `process.execPath + prettier.cjs` 直跑，规避 Node 对 `.cmd` 的 spawnSync EINVAL 加固）；Windows autocrlf 工作区会因行尾被整文件标记——已对本分支变更文件统一 prettier 化（行尾 LF + 存量重排，无语义变更）。
-- **上游测试断言的两类处理口径**：断言**随产品面改名**的（如 `electron-shell-contract` 冻结 `productName: Miniclaw`）——随品牌更新直接同步断言并注明依据（票面指令 + ADR-0005）；上游**内容契约**冲突（如 #16 断言上游 README 术语段）——涉及上游文案取舍，立票裁决、本票不夹带。
+- **上游测试断言的两类处理口径**：断言**随产品面改名**的（如 `electron-shell-contract` 冻结 `productName: Miniclaw`）——随品牌更新直接同步断言并注明依据（票面指令 + ADR-0005）；上游**内容契约**冲突（如 #16 断言上游 README 术语段）——涉及上游文案取舍，立票裁决、本票不夹带。#16 已裁决：方案②（README 补回「智能体优先工作模型」术语，上游契约零改动）。
 - **上游测试冻结的旧产品名**：`tests/electron-shell-contract.test.ts` 断言打包配置 `productName: Miniclaw`，与票面指令「productName 改 HClaw」直接冲突。已将该测试的品牌断言同步为 `productName: HClaw`（附注释），测试意图（打包聚焦桌面壳、图标与产物目录不动）不变；上游图标断言 `miniclaw-icon.png` 未动（图标不在本票）。
 - **copyright 字段**：`electron-builder.yml` 的 copyright 随 productName 一并改为 HClaw contributors（安装包元数据属产品可见面）；上游署名以 README Attribution + LICENSE（未动）承载。
-- **CI runner**：`hclaw-ci.yml` 选 ubuntu-24.04（与上游 ci.yml 同平台，全量单测在该平台全绿）。Windows runner 接入待 #10–#15 簇清零，届时需验证 better-sqlite3 在 runner 上可编译（本地 Windows 已实测 `npm ci` 成功、better-sqlite3 可用）。CI 单测步骤**显式豁免** `tests/frontend-product-terminology.test.ts`——其 README 内容契约断言与品牌浅改冲突，已立票 #16 待裁决（豁免在 workflow 注释声明，裁决落地后移除）；本地/CI 基线对比口径仍以本节 57 例清单为准（该文件在 Windows 基线属簇七）。
+- **CI runner（2026-09-12 更新）**：`hclaw-ci.yml` 三 job——verify（ubuntu：typecheck+format+单测）、test-windows（windows-latest 单测，#10-#15 簇清零后接入）、package-windows（NSIS 打包）。**#16 裁决（方案②）落地后豁免已全部移除，单测在双平台零失败零豁免**；本节 57 例清单保留作历史基线记录。
 - **quota-router 注入默认 no-op**：生产装配路径暂无 `setQuotaRoutingPolicy` 调用方，缝上默认挂 no-op 策略——这是 T1 的预期形态（额度感知未生效、行为零变化），后续票接装配。
 
 ## Windows 内嵌打包（T8 实测）

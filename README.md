@@ -13,7 +13,7 @@
 - **IM Automation（渠道自动化）**：个人自动化（提醒/邮件/巡检）迁移为工作台渠道与定时任务
 - **Evals & Guardrails（评测与护栏）**：子代理编排 + 评测体系 + 可观测护栏（规划中）
 
-上游原生能力：多用户工作台（Agent Profile / Workspace / Session 三层模型）、Skills、MCP、会话持久化、七种 IM 渠道。
+上游原生能力：多用户工作台（Agent Profile / Workspace / Session 三层模型）、Skills、MCP、会话持久化、七种 IM 渠道、智能体优先工作模型。
 
 ## Attribution
 
