@@ -72,6 +72,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             web/package-lock.json
+            container/agent-runner/package-lock.json
 
       - name: Install dependencies
         run: |

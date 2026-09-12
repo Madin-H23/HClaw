@@ -28,11 +28,11 @@
     "desktop:build:preload": "esbuild electron/src/preload/index.ts --bundle --platform=node --format=cjs --outfile=electron/dist/preload.cjs --sourcemap --external:electron",
     "desktop:typecheck": "tsc --noEmit -p electron/tsconfig.json",
     "desktop:dev": "npm run desktop:build && electron electron",
-    "desktop:package": "npm run build:all && npm run desktop:build && electron-builder --projectDir electron --config electron-builder.yml",
-    "desktop:package:dir": "npm run build:all && npm run desktop:build && electron-builder --dir --projectDir electron --config electron-builder.yml",
+    "desktop:package": "npm run build:all && npm run desktop:build && npm run desktop:rebuild:electron && electron-builder --publish never --config electron/electron-builder.yml && npm run desktop:rebuild:node",
+    "desktop:package:dir": "npm run build:all && npm run desktop:build && npm run desktop:rebuild:electron && electron-builder --dir --publish never --config electron/electron-builder.yml && npm run desktop:rebuild:node",
     "desktop:package:win": "npm run build && npm run build:web && npm run desktop:build:agent-runner && npm run desktop:build && npm run desktop:rebuild:electron && electron-builder --publish never --config electron/electron-builder.yml && npm run desktop:rebuild:node",
-    "desktop:build:agent-runner": "npm --prefix container/agent-runner install --no-audit --no-fund && npm --prefix container/agent-runner run build",
-    "desktop:rebuild:electron": "cd node_modules/better-sqlite3 && npx prebuild-install -r electron -t 39.8.10",
+    "desktop:build:agent-runner": "npm --prefix container/agent-runner ci --no-audit --no-fund && npm --prefix container/agent-runner run build",
+    "desktop:rebuild:electron": "node scripts/rebuild-native-electron.mjs",
     "desktop:rebuild:node": "npm rebuild better-sqlite3"
   },
   "dependencies": {

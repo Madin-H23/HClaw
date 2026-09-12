@@ -163,11 +163,24 @@ function pickFreePort(): Promise<number> {
   });
 }
 
-/** 轮询 TCP 连接直到 server 监听就绪（上游 startWebServer 完成装配的信号） */
-function waitUntilListening(port: number, timeoutMs: number): Promise<void> {
+/**
+ * 轮询 TCP 连接直到 server 监听就绪（上游 startWebServer 完成装配的信号）。
+ * shouldAbort 返回非空字符串=装配期已出现致命信号（如上游调用 process.exit），
+ * 立即以该原因失败，不等超时。
+ */
+function waitUntilListening(
+  port: number,
+  timeoutMs: number,
+  shouldAbort: () => string | null,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
     const attempt = (): void => {
+      const abortReason = shouldAbort();
+      if (abortReason !== null) {
+        reject(new Error(abortReason));
+        return;
+      }
       const socket = net.connect({ port, host: '127.0.0.1' });
       socket.once('connect', () => {
         socket.destroy();
@@ -175,6 +188,11 @@ function waitUntilListening(port: number, timeoutMs: number): Promise<void> {
       });
       socket.once('error', () => {
         socket.destroy();
+        const lateAbort = shouldAbort();
+        if (lateAbort !== null) {
+          reject(new Error(lateAbort));
+          return;
+        }
         if (Date.now() > deadline) {
           reject(
             new Error(
@@ -204,7 +222,7 @@ export async function startEmbeddedServer(log: EmbedLogger): Promise<string> {
   };
 
   writeLog(`内嵌 server 根目录：${serverRoot}`);
-  // main() 失败路径会 logger.error 后 process.exit(1)——至少把退出码留档
+  // 兜底留档：仅覆盖装配完成后的 server 运行期 exit（见下方接管说明）
   process.on('exit', (code) => {
     if (code !== 0) appendLog(logPath, `server 进程退出 code=${code}`);
   });
@@ -222,12 +240,48 @@ export async function startEmbeddedServer(log: EmbedLogger): Promise<string> {
   process.chdir(serverRoot);
   writeLog(`WEB_PORT=${port}，cwd=${process.cwd()}`);
 
-  writeLog(`加载 server 入口：${entry}`);
-  // 上游 main() 在模块尾部自启：import 返回即装配已开始（异步推进）
-  await import(pathToFileURL(entry).href);
-  writeLog('server 入口加载完成，等待监听就绪…');
+  // 装配期接管 process.exit：上游 main() 的失败路径是 logger.error +
+  // process.exit(1)，直接放行会杀掉整个壳（弹窗/回退都来不及发生）。
+  // 接管窗口 = import → 监听就绪：exit 调用转记 exitCode 并抛可捕错误；
+  // 轮询循环见 exitCode 立即失败（快于 60s 超时）。main().catch 回调内
+  // 的调用点会让接管错误逃逸成 unhandledRejection 警告（进程不退），
+  // 此时由本函数按 exitCode 判定失败。监听就绪即还原——server 运行期
+  // （装配完成后）的 exit 路径不覆盖，会照原语义杀壳，属已知局限
+  // （docs/limitations.md「内嵌启动失败回退」条目）。
+  let exitCode: number | null = null;
+  const originalExit = process.exit;
+  process.exit = ((code?: number): never => {
+    exitCode = typeof code === 'number' ? code : 0;
+    appendLog(
+      logPath,
+      `装配期接管 process.exit(${exitCode})——转为装配失败信号`,
+    );
+    throw new Error(
+      `内嵌 server 装配期调用 process.exit(${exitCode})（已转为装配失败）`,
+    );
+  }) as typeof process.exit;
+  try {
+    writeLog(`加载 server 入口：${entry}`);
+    // 上游 main() 在模块尾部自启：import 返回即装配已开始（异步推进）
+    await import(pathToFileURL(entry).href);
+    writeLog('server 入口加载完成，等待监听就绪…');
 
-  await waitUntilListening(port, SERVER_READY_TIMEOUT_MS);
+    await waitUntilListening(port, SERVER_READY_TIMEOUT_MS, () =>
+      exitCode !== null
+        ? `内嵌 server 装配期调用 process.exit(${exitCode})（已转为装配失败）`
+        : null,
+    );
+  } finally {
+    process.exit = originalExit;
+  }
+
+  if (exitCode !== null && exitCode !== 0) {
+    // 监听已就绪但装配路径曾请求退出：数据面可用优先继续服务（此时壳即
+    // server，杀壳/回退 3000 反而丢掉已就绪实例），留档供诊断
+    writeLog(
+      `装配路径曾调用 process.exit(${exitCode})，server 已监听——继续服务`,
+    );
+  }
   const baseUrl = `http://127.0.0.1:${port}`;
   writeLog(`内嵌 server 就绪：${baseUrl}`);
   return baseUrl;

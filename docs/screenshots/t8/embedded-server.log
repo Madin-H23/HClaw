@@ -1,25 +1,25 @@
-[2026-09-11T22:40:13.771Z] 内嵌 server 根目录：C:\Users\28951\AppData\Roaming\HClaw\server
-[2026-09-11T22:40:13.986Z] web 前端已物化：C:\Users\28951\AppData\Roaming\HClaw\server\web\dist
-[2026-09-11T22:40:14.001Z] WEB_PORT=56666，cwd=C:\Users\28951\AppData\Roaming\HClaw\server
-[2026-09-11T22:40:14.002Z] 加载 server 入口：C:\Users\28951\AppData\Local\Programs\miniclaw\resources\app.asar.unpacked\dist\index.js
+[2026-09-11T22:40:13.771Z] 内嵌 server 根目录：C:\Users\<user>\AppData\Roaming\HClaw\server
+[2026-09-11T22:40:13.986Z] web 前端已物化：C:\Users\<user>\AppData\Roaming\HClaw\server\web\dist
+[2026-09-11T22:40:14.001Z] WEB_PORT=56666，cwd=C:\Users\<user>\AppData\Roaming\HClaw\server
+[2026-09-11T22:40:14.002Z] 加载 server 入口：C:\Users\<user>\AppData\Local\Programs\miniclaw\resources\app.asar.unpacked\dist\index.js
 [2026-09-11T22:40:19.224Z] server 入口加载完成，等待监听就绪…
 [2026-09-11T22:40:19.232Z] 内嵌 server 就绪：http://127.0.0.1:56666
-[2026-09-11T22:42:22.941Z] 内嵌 server 根目录：C:\Users\28951\AppData\Roaming\HClaw\server
+[2026-09-11T22:42:22.941Z] 内嵌 server 根目录：C:\Users\<user>\AppData\Roaming\HClaw\server
 [2026-09-11T22:42:22.944Z] web 前端已是当前版本（1.0.0），跳过物化
-[2026-09-11T22:42:22.960Z] WEB_PORT=62579，cwd=C:\Users\28951\AppData\Roaming\HClaw\server
-[2026-09-11T22:42:22.961Z] 加载 server 入口：C:\Users\28951\AppData\Local\Programs\miniclaw\resources\app.asar.unpacked\dist\index.js
+[2026-09-11T22:42:22.960Z] WEB_PORT=62579，cwd=C:\Users\<user>\AppData\Roaming\HClaw\server
+[2026-09-11T22:42:22.961Z] 加载 server 入口：C:\Users\<user>\AppData\Local\Programs\miniclaw\resources\app.asar.unpacked\dist\index.js
 [2026-09-11T22:42:27.768Z] server 入口加载完成，等待监听就绪…
 [2026-09-11T22:42:27.787Z] 内嵌 server 就绪：http://127.0.0.1:62579
-[2026-09-11T23:45:30.105Z] 内嵌 server 根目录：C:\Users\28951\AppData\Roaming\HClaw\server
+[2026-09-11T23:45:30.105Z] 内嵌 server 根目录：C:\Users\<user>\AppData\Roaming\HClaw\server
 [2026-09-11T23:45:30.108Z] web 前端已是当前版本（1.0.0），跳过物化
-[2026-09-11T23:45:30.111Z] agent-runner 已 junction：C:\Users\28951\AppData\Roaming\HClaw\server\container\agent-runner → C:\Users\28951\AppData\Local\Programs\miniclaw\resources\container\agent-runner
-[2026-09-11T23:45:30.130Z] WEB_PORT=63631，cwd=C:\Users\28951\AppData\Roaming\HClaw\server
-[2026-09-11T23:45:30.131Z] 加载 server 入口：C:\Users\28951\AppData\Local\Programs\miniclaw\resources\app.asar.unpacked\dist\index.js
+[2026-09-11T23:45:30.111Z] agent-runner 已 junction：C:\Users\<user>\AppData\Roaming\HClaw\server\container\agent-runner → C:\Users\<user>\AppData\Local\Programs\miniclaw\resources\container\agent-runner
+[2026-09-11T23:45:30.130Z] WEB_PORT=63631，cwd=C:\Users\<user>\AppData\Roaming\HClaw\server
+[2026-09-11T23:45:30.131Z] 加载 server 入口：C:\Users\<user>\AppData\Local\Programs\miniclaw\resources\app.asar.unpacked\dist\index.js
 [2026-09-11T23:45:35.551Z] server 入口加载完成，等待监听就绪…
 [2026-09-11T23:45:35.563Z] 内嵌 server 就绪：http://127.0.0.1:63631
-[2026-09-12T00:15:45.451Z] 内嵌 server 根目录：C:\Users\28951\AppData\Roaming\HClaw\server
+[2026-09-12T00:15:45.451Z] 内嵌 server 根目录：C:\Users\<user>\AppData\Roaming\HClaw\server
 [2026-09-12T00:15:45.453Z] web 前端已是当前版本（1.0.0），跳过物化
-[2026-09-12T00:15:45.469Z] WEB_PORT=60075，cwd=C:\Users\28951\AppData\Roaming\HClaw\server
-[2026-09-12T00:15:45.470Z] 加载 server 入口：C:\Users\28951\AppData\Local\Programs\miniclaw\resources\app.asar.unpacked\dist\index.js
+[2026-09-12T00:15:45.469Z] WEB_PORT=60075，cwd=C:\Users\<user>\AppData\Roaming\HClaw\server
+[2026-09-12T00:15:45.470Z] 加载 server 入口：C:\Users\<user>\AppData\Local\Programs\miniclaw\resources\app.asar.unpacked\dist\index.js
 [2026-09-12T00:15:50.984Z] server 入口加载完成，等待监听就绪…
 [2026-09-12T00:15:51.204Z] 内嵌 server 就绪：http://127.0.0.1:60075

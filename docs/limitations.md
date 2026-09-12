@@ -123,9 +123,12 @@ T1 按 ADR-0005 完成**产品身份面**替换：electron 壳（窗口标题 / 
 - **agent 执行轮需要系统 Node.js**：宿主回合 preflight 通过后由上游 node-resolver 解析 node 二进制 spawn `container/agent-runner/dist/pi-index.js`（上游语义，`src/` 零 diff 约束）。未装 Node.js 的机器：发消息会收到结构化 setup 错误气泡（数据面/额度面板/卡片/IM 配置面不受影响），终端 PTY 回退 pipe 模式。
 - **安装目录名沿包名 `miniclaw`**：`%LOCALAPPDATA%\Programs\miniclaw\HClaw.exe`——目录名来自 package.json `name`（上游代码标识符，ADR-0005 保留）；产品可见面（快捷方式 `HClaw.lnk`、exe 名、DisplayName「HClaw 1.0.0」、appId）均为 HClaw。
 - **卸载不删用户数据**：`deleteAppDataOnUninstall: false`（显式落字），`%APPDATA%/HClaw`（含内嵌 server 的 SQLite/会话/额度快照）随卸载保留；junction 断链残留于其中，重装自愈。
+- **静默卸载有部分残留（本机 3/3 复现，未清根因）**：`"Uninstall HClaw.exe" /S` 三次实测同形残留——①安装目录部分文件未删（固定清单：`resources.pak`、`snapshot_blob.bin`、`v8_context_snapshot.bin`、`version`、`vk_swiftshader*.dll`、`vulkan-1.dll`、`resources/` 残目录、卸载器本体；HClaw.exe 与其余大文件正常删除）②开始菜单/桌面 `HClaw.lnk` 未删 ③注册表卸载项未删；退出码均为 0（静默模式吞掉失败，无用户可见报错）。疑因：AV/索引器对刚重装文件的短暂句柄 + NSIS 卸载器静默跳过/中止后不回滚快捷方式与注册表段；两次连跑卸载器不推进（疑似首跑后清单态丢失）。**干净机器（无 AV 干扰、应用完全退出）复核待做**；临时清理路径=手删残目录+快捷方式+`reg delete` 卸载项。
 - **代理会话内打包的文件锁竞态（环境固有，非包质量）**：本机打包实测 4 次 EBUSY——①旧 `better_sqlite3.node`（重试过）②/③ NSIS 写完临时卸载器、signtool 回写后 makensis 立即回读被拒（内外输出目录皆复现，事后探测无残留占者=瞬时扫描窗口；间隔重试可过，本票成功一轮曾穿过该点）④旧输出目录 `app.asar`/`default_app.asar` 长期锁死清不掉（Restart Manager 指认占用者=ZCode 代理主进程，代理 harness 对工作区新文件的句柄；换仓库外输出目录绕过）。CI 与正常终端环境无此干扰；`directories.output` 保持上游口径 `electron/release` 不变，本票最终包落仓库外一次性目录后校验。
 - **server stdout 打包态不可见**：pino 日志走 stdout；内嵌引导事件（物化/端口/就绪/退出码）落 `%APPDATA%/HClaw/server/embedded-server.log`（1MB 轮转）。
-- **内嵌启动失败回退**：bootstrap 失败（如入口缺失/端口异常）弹 `dialog.showErrorBox` 并回退缺省地址 `127.0.0.1:3000`——即 ADR-0007 预案的「手动起 server + 壳连 localhost」形态；显式 `MINICLAW_SERVER_URL` / `--server-url` 时完全不内嵌（远程模式语义原样）。
+- **内嵌启动失败回退的覆盖范围**：装配期失败（入口缺失 / import 同步抛 / 装配期 `process.exit` / 监听超时）→ 弹 `dialog.showErrorBox` 并回退缺省地址 `127.0.0.1:3000`——即 ADR-0007 预案的「手动起 server + 壳连 localhost」形态。装配期对上游 `process.exit` 做临时接管（转记退出码 + 抛可捕错误，监听就绪即还原；`main().catch` 回调内的调用点会逃逸成 unhandledRejection 警告，进程不退，由引导按退出码判定失败）。**覆盖边界**：装配完成（监听就绪）后的 server 运行期 exit 路径不接管，会照上游原语义直接杀壳——已知局限。显式 `MINICLAW_SERVER_URL` / `--server-url` 时完全不内嵌（远程模式语义原样）。
+- **端口分配 TOCTOU（已知窗口）**：空闲端口由 `listen(0)` 探测后立即释放，到上游 `startWebServer` 真正 bind 之间有时间窗，极小概率被其他进程抢占——后果为装配失败走弹窗回退，可重试；上游缺省 3000 固定端口同样存在该性质，不另设重试。
+- **web 前端物化按版本戳幂等（已知边界）**：同版本号重装/重打包不重物化 `web/dist`（戳=包版本）——同版本内前端内容变化时需手动清 `%APPDATA%/HClaw/server/web/dist`（或删 `.web-dist-version` 戳）触发重物化；正式发版升版本号场景不受影响。
 - **macOS/linux 段**：electron-builder.yml 保留上游语义（仅路径随打包根加前缀），本票只在 Windows 实测；mac dmg/zip 与 linux AppImage 未验。
 - **CI 打包 job**：`hclaw-ci.yml` 增 `package-windows`（windows-latest，artifact `HClaw-windows-x64-setup`）；runner 上 prebuild 下载与 NSIS 工具下载均走 GitHub 直连，未用镜像。
 
@@ -136,7 +139,8 @@ T1 按 ADR-0005 完成**产品身份面**替换：electron 壳（窗口标题 / 
 3. **登录**：向导建管理员 → 进入工作台；清 cookie 重进应见登录页并可登录。
 4. **额度面板**（mock 态构造）：设两个 SMOKE 供应商（假 baseUrl 即可）→ `%APPDATA%/HClaw/server/data/config/` 写 `quota-router.json`（映射 → fake quota-tool baseUrl）与 `quota-router-credentials.json`（用仓库 `dist/runtime-config.js` 的 `encryptChannelSecret` 加密，密钥=同目录 `claude-provider.key`）→ 起一个 fake quota-tool（POST /api/query 回 `{ok:true,updatedAt,summary,windows,details}`，windows 项七字段契约见 `src/quota-router/tiers.ts`）→ 侧栏「额度」应出两卡：充足绿档/耗尽红档 + 原始信号 + 数据时间（面板读取即触发懒刷新，首读空、~2s 后刷新）。
 5. **降档/否决卡片**：把「耗尽」档供应商 `PUT /api/config/claude/default` 设为默认 → 会话发一条消息 → 池内有可用目标时出【额度降档】卡（重指到充足档）；禁用唯一充足档后再发，出【额度否决】卡（本轮 runner 不启动）。会话流内直接可读（turn-cards 徽标文本）。
-6. **卸载**：`"Uninstall HClaw.exe" /S` → 安装目录/开始菜单/注册表项消失；`%APPDATA%/HClaw` 保留（上一条）。
+6. **卸载**：`"Uninstall HClaw.exe" /S` 后**逐项核对并记录事实**（本机实测为部分残留，见「已知局限」卸载条目，不以「消失」为预期断言）：安装目录是否清空、`HClaw.lnk`（开始菜单/桌面）是否消失、注册表卸载项是否消失、`%APPDATA%/HClaw` 保留（上一条）。发现残留：记录清单 → 手动清理（删残目录/快捷方式 + `reg delete` 卸载项）→ 复核。
+7. **图标成品核对**：右键 `%LOCALAPPDATA%\Programs\miniclaw\HClaw.exe` → 属性 → 详细信息/图标，核对 exe 图标为 HClaw 炉心图（非 Electron 默认原子图）；同法核对安装器 `HClaw Setup <ver>.exe` 图标（NSIS 由 `win.icon` 生成的 ico 成品）。
 
 ## 真模型手动冒烟清单
 
