@@ -456,6 +456,7 @@ import {
   scheduledGroupPromptMessageId,
 } from './task-scheduler.js';
 import { createSchedulerProactiveNotifier } from './proactive-message/trigger-dispatch.js';
+import { bindImChannelAdapter } from './proactive-message/delivery-assembly.js';
 import { getMergedTaskRunHistory } from './task-run-history.js';
 import { findDuplicateActiveAgentTask } from './task-definition-fingerprint.js';
 import {
@@ -21058,11 +21059,14 @@ async function main(): Promise<void> {
       };
     },
     assistantName: ASSISTANT_NAME,
-    // 批二 B4（票 #24）：调度器 → 主动消息接线（schedulerDeps 注入级，本文件
-    // 不加其他逻辑）。生产工厂构造不抛错（频控库/审计库故障各自降级，fail-open
-    // 纪律）；渠道适配器解析恒 null——生产绑定（IMManager 已连接实例 → 发送
-    // 端口）归 B5 真机凭证票，本阶段送达路径按 adapter-unavailable 跳过，
-    // 频控判定与投递审计照常走通。
+    // 批二 B5（票 #25）：渠道适配器解析从 B4 的恒 null 接为真解析——admin 用户
+    // （ADR-0008：推送目标 MVP 仅 admin 私聊，沿 reloadFeishuConnection 的
+    // listUsers 取 admin 先例）→ imManager.getConnectedChannel（只读公开面，
+    // 内部复用 isOutboundConnectionAllowed 出站门控）→ bindImChannelAdapter
+    // 折算发送端口。默认行为安全：渠道未连接/账号停用/admin 不存在 → resolver
+    // 返回 null；目标未配置（proactive-message.json channels.<id>.defaultTarget
+    // 缺省）→ 决策在目标解析处即跳过——两路都是可观察的 skipped（投递审计 +
+    // 结构化日志），不产生意外发送。
     notifyTaskResult: createSchedulerProactiveNotifier({
       configPath: path.join(DATA_DIR, 'config', 'proactive-message.json'),
       rateControlDbPath: path.join(DATA_DIR, 'db', 'proactive-message.db'),
@@ -21071,7 +21075,18 @@ async function main(): Promise<void> {
         'db',
         'proactive-message-deliveries.db',
       ),
-      resolveAdapter: () => null,
+      resolveAdapter: bindImChannelAdapter((channelId) => {
+        const adminId = listUsers({
+          status: 'active',
+          role: 'admin',
+          page: 1,
+          pageSize: 1,
+        }).users[0]?.id;
+        // admin 不存在/未激活 → undefined（= adapter-unavailable 跳过，不发送）
+        return adminId
+          ? imManager.getConnectedChannel(adminId, channelId)
+          : undefined;
+      }),
     }),
   };
   startSchedulerLoop(schedulerDeps);
