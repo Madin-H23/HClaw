@@ -114,8 +114,16 @@ describe('channel account routes', () => {
       botToken: 'probe',
     });
     expect(fs.readFileSync(keyPath, 'utf8')).toBe(firstKey);
-    expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
-    expect(fs.statSync(path.dirname(keyPath)).mode & 0o777).toBe(0o700);
+    // Windows 适配（#13）：NTFS 不落地 POSIX 权限位，statSync().mode 恒为
+    // 0o666（438），0o600/0o700 断言在本平台不成立（triage 裁决：改行为级
+    // 断言，权限位安全语义由 POSIX 分支继续覆盖）。win32 断言密钥文件存在
+    // 且内容稳定（上一行已校验）。
+    if (process.platform === 'win32') {
+      expect(fs.existsSync(keyPath)).toBe(true);
+    } else {
+      expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
+      expect(fs.statSync(path.dirname(keyPath)).mode & 0o777).toBe(0o700);
+    }
   });
 
   test('failed connector cleanup keeps the account disabled and reports a retryable partial success', async () => {

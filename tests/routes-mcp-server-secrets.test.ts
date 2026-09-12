@@ -32,6 +32,18 @@ const app = new Hono().route('/api/mcp-servers', routes);
 beforeAll(() => fs.mkdirSync(tmpDir, { recursive: true }));
 afterAll(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
 
+// Windows 适配（#13）：NTFS 不落地 POSIX 权限位，statSync().mode 恒为
+// 0o666（438），0o600 断言在本平台不成立（triage 裁决：改行为级断言，
+// 权限位安全语义由 POSIX 分支继续覆盖）。win32 断言密文文件存在（内容
+// 断言由各用例既有语句承担）；POSIX 维持 0o600 原断言。
+function expectOwnerOnlySecretsFile(filePath: string): void {
+  if (process.platform === 'win32') {
+    expect(fs.existsSync(filePath)).toBe(true);
+    return;
+  }
+  expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
+}
+
 describe('MCP secret exposure boundary', () => {
   test('first runtime read atomically migrates legacy embedded secrets and is idempotent', () => {
     const root = path.join(tmpDir, 'mcp-servers', 'legacy-owner');
@@ -60,7 +72,7 @@ describe('MCP secret exposure boundary', () => {
     const secretsPath = path.join(root, 'secrets.json');
     const firstSecrets = fs.readFileSync(secretsPath, 'utf8');
     expect(firstSecrets).toContain('legacy-secret');
-    expect(fs.statSync(secretsPath).mode & 0o777).toBe(0o600);
+    expectOwnerOnlySecretsFile(secretsPath);
 
     expect(loadUserMcpServers('legacy-owner').legacy).toMatchObject({
       env: { TOKEN: 'legacy-secret' },
@@ -113,7 +125,7 @@ describe('MCP secret exposure boundary', () => {
     const migratedSecrets = fs.readFileSync(secretsPath, 'utf8');
     expect(migratedSecrets).toContain('stale-lock-secret');
     expect(migratedSecrets).toContain('stale-header-secret');
-    expect(fs.statSync(secretsPath).mode & 0o777).toBe(0o600);
+    expectOwnerOnlySecretsFile(secretsPath);
   });
 
   test('does not remove a live migration lock owned by this process', () => {
@@ -203,9 +215,7 @@ describe('MCP secret exposure boundary', () => {
     expect(fs.readFileSync(path.join(root, 'secrets.json'), 'utf8')).toContain(
       'top-secret',
     );
-    expect(fs.statSync(path.join(root, 'secrets.json')).mode & 0o777).toBe(
-      0o600,
-    );
+    expectOwnerOnlySecretsFile(path.join(root, 'secrets.json'));
   });
 
   test('PATCH omission preserves secrets and explicit null clears them', async () => {
