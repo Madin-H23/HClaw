@@ -34,11 +34,12 @@ afterAll(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
 
 // Windows 适配（#13）：NTFS 不落地 POSIX 权限位，statSync().mode 恒为
 // 0o666（438），0o600 断言在本平台不成立（triage 裁决：改行为级断言，
-// 权限位安全语义由 POSIX 分支继续覆盖）。win32 断言密文文件存在（内容
-// 断言由各用例既有语句承担）；POSIX 维持 0o600 原断言。
+// 权限位安全语义由 POSIX 分支继续覆盖）。win32 断言密文文件为常规文件
+// （statSync().isFile()，#18 升级自存在性断言；内容断言由各用例既有语句
+// 承担）；POSIX 维持 0o600 原断言。
 function expectOwnerOnlySecretsFile(filePath: string): void {
   if (process.platform === 'win32') {
-    expect(fs.existsSync(filePath)).toBe(true);
+    expect(fs.statSync(filePath).isFile()).toBe(true);
     return;
   }
   expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);

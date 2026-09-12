@@ -3,12 +3,12 @@ import path from 'node:path';
 import { check as prettierCheck, resolveConfig } from 'prettier';
 import { describe, expect, test } from 'vitest';
 
+import { readLf } from './helpers/eol.js';
+
 const root = process.cwd();
-// Windows 适配（#11）：prettierCheck 默认 endOfLine: lf，autocrlf 检出的 CRLF
-// 会被误判为格式违规。读取后归一 LF（POSIX 检出无 \r，为 no-op）——本测试的
+// prettierCheck 默认 endOfLine: lf，autocrlf 检出的 CRLF 会被误判为格式
+// 违规（#11）。读取统一走 readLf 归一 LF（POSIX 检出为 no-op）——本测试的
 // 格式契约针对内容排版，而非 git 检出行尾。
-const read = (file: string) =>
-  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 
 const lockfiles = [
   'package-lock.json',
@@ -25,7 +25,7 @@ const streamEventFiles = [
 
 describe('reproducible build contract', () => {
   test('all npm projects commit lockfiles and install them with npm ci', () => {
-    const gitignore = read('.gitignore');
+    const gitignore = readLf('.gitignore');
     for (const lockfile of lockfiles) {
       expect(fs.existsSync(path.join(root, lockfile))).toBe(true);
       expect(gitignore).not.toMatch(
@@ -35,7 +35,7 @@ describe('reproducible build contract', () => {
         ),
       );
 
-      const lock = JSON.parse(read(lockfile)) as {
+      const lock = JSON.parse(readLf(lockfile)) as {
         packages: Record<string, { resolved?: string }>;
       };
       for (const dependency of Object.values(lock.packages)) {
@@ -43,7 +43,7 @@ describe('reproducible build contract', () => {
       }
     }
 
-    const makefile = read('Makefile');
+    const makefile = readLf('Makefile');
     const installTarget = makefile
       .split(/\n(?=\S)/)
       .find((target) => target.startsWith('install:'));
@@ -52,7 +52,7 @@ describe('reproducible build contract', () => {
     expect(installTarget).toContain('web && $(PKG) ci');
     expect(installTarget).not.toMatch(/\$\(PKG\) install(?:\s|$)/);
 
-    const ci = read('.github/workflows/ci.yml');
+    const ci = readLf('.github/workflows/ci.yml');
     expect(ci).toContain('npm ci');
     expect(ci).toContain('npm --prefix web ci');
     expect(ci).toContain('npm --prefix container/agent-runner ci');
@@ -62,9 +62,9 @@ describe('reproducible build contract', () => {
   });
 
   test('generated StreamEvent copies stay synchronized and formatted', async () => {
-    const canonical = read(streamEventFiles[0]);
+    const canonical = readLf(streamEventFiles[0]);
     for (const file of streamEventFiles) {
-      const source = read(file);
+      const source = readLf(file);
       expect(source).toBe(canonical);
       const filepath = path.join(root, file);
       expect(
@@ -77,8 +77,8 @@ describe('reproducible build contract', () => {
   });
 
   test('container tools refresh to latest with rollback and audit controls', () => {
-    const dockerfile = read('container/Dockerfile');
-    const publishWorkflow = read('.github/workflows/docker-publish.yml');
+    const dockerfile = readLf('container/Dockerfile');
+    const publishWorkflow = readLf('.github/workflows/docker-publish.yml');
 
     expect(dockerfile).toMatch(/^FROM node:24-slim$/m);
     expect(dockerfile).toContain('COPY --from=ghcr.io/astral-sh/uv:latest');

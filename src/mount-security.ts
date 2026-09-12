@@ -508,9 +508,17 @@ export function validateMount(
     CONTAINER_CONTROL_CHARS_RE.test(mount.hostPath) ||
     (firstColon !== -1 && !colonIsDrivePrefixOnly)
   ) {
+    // 拒绝措辞按触发点区分（#18）：win32 的合法路径本就允许盘符前缀冒号，
+    // 中段冒号/盘相对（`C:foo`）命中时点名"仅允许盘符前缀"比笼统的禁冒号
+    // 更可操作；POSIX（与控制字符命中）维持原措辞。
+    const reason =
+      CONTAINER_CONTROL_CHARS_RE.test(mount.hostPath) ||
+      process.platform !== 'win32'
+        ? 'Host path must not contain control characters or colons'
+        : 'Host path must not contain colons outside the "C:\\dir" drive-letter prefix';
     return {
       allowed: false,
-      reason: 'Host path must not contain control characters or colons',
+      reason,
     };
   }
 

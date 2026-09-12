@@ -1,12 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
-const root = process.cwd();
-// Windows 适配（#11）：core.autocrlf=true 检出使工作区源码为 CRLF，而断言以
-// LF 文本为基准（跨行 needle）。读取后归一为 LF；POSIX 检出无 \r，为 no-op。
-const readLf = (file: string) =>
-  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+import { readLf } from './helpers/eol.js';
+
 const agentRunner = readLf('container/agent-runner/src/index.ts');
 const hostRunner = readLf('src/container-runner.ts');
 const main = readLf('src/index.ts');

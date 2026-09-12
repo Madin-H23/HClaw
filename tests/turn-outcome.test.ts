@@ -1,16 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import fs from 'node:fs';
-import path from 'node:path';
 
 import { resolveTurnOutcome } from '../src/turn-outcome.js';
-
-// Windows 适配（#11）：core.autocrlf=true 检出使工作区源码为 CRLF，而本测试
-// 的文本断言（跨行 needle / 格式契约）以 LF 为基准。读取源码后统一归一为
-// LF；POSIX 检出无 \r，替换为 no-op，断言内容一字不变。
-const readLf = (file: string): string =>
-  fs
-    .readFileSync(path.join(process.cwd(), file), 'utf8')
-    .replace(/\r\n/g, '\n');
+import { readLf } from './helpers/eol.js';
 
 describe('resolveTurnOutcome', () => {
   test('retries an in-flight close with no reply or healthy completion', () => {

@@ -124,10 +124,18 @@ function writeTarHeader(options: {
 
 function appendPaxPathRecord(blocks: Buffer[], name: string): void {
   // POSIX pax 扩展头："len path=<name>\n"，len 覆盖整条记录（含自身位数）。
+  // len 按 POSIX 语义以 UTF-8 字节数计（#18）：非 ASCII 路径的 JS 字符串
+  // 长度 ≠ 字节数，用 base.length 会写出偏小的记录长度，真实 tar 解析
+  // pax 头时读到残缺记录导致解包失败/文件名错乱。
   const base = ` path=${name}\n`;
   let digits = 1;
-  while (String(base.length + digits).length !== digits) digits += 1;
-  const payload = Buffer.from(`${base.length + digits}${base}`, 'utf8');
+  while (String(Buffer.byteLength(base, 'utf8') + digits).length !== digits) {
+    digits += 1;
+  }
+  const payload = Buffer.from(
+    `${Buffer.byteLength(base, 'utf8') + digits}${base}`,
+    'utf8',
+  );
   const padding = Buffer.alloc(
     (BLOCK_SIZE - (payload.length % BLOCK_SIZE)) % BLOCK_SIZE,
   );
@@ -521,6 +529,34 @@ describe('runtime backup and restore safety', () => {
     },
     process.platform === 'win32' ? 60_000 : 20_000,
   );
+
+  test('writes byte-accurate pax path records for non-ASCII names beyond the ustar name field', async () => {
+    // #18：pax 记录长度必须按 UTF-8 字节数计。此前用字符串长度估算，非
+    // ASCII 路径写出偏小的记录长度，真实 tar 解析扩展头失败。'🔥' 为 4
+    // 字节 UTF-8，拼出 >100 字节的归档内路径强制走 pax 扩展头，并用真实
+    // 系统 tar 解包回读验证（ASCII 长路径已有上一用例覆盖，字节长与字符
+    // 长相等的路径测不出此缺陷）。名字尾部保留 ASCII 长段：ustar 兜底名
+    // 取整串末 100 个字符位，非 ASCII 尾段会让兜底名超 100 字节触发打包
+    // 器的 fail-loud 守卫（triage 裁决该边界维持 fail-loud），故 pax 记录
+    // 承载非 ASCII 全名、兜底名保持纯 ASCII。
+    const archiveRoot = path.join(tmp, 'pax-unicode-archive');
+    const archive = path.join(tmp, 'pax-unicode-backup.tar.gz');
+    const extractDir = path.join(tmp, 'pax-unicode-extract');
+    const groupsDir = path.join(archiveRoot, 'data', 'groups');
+    fs.mkdirSync(groupsDir, { recursive: true });
+    const name = `快照-${'🔥'.repeat(26)}-${'x'.repeat(120)}.db`;
+    fs.writeFileSync(path.join(groupsDir, name), 'pax-payload');
+    createTarGz(archive, archiveRoot, 'data');
+    expect(Buffer.byteLength(`data/groups/${name}`, 'utf8')).toBeGreaterThan(
+      100,
+    );
+
+    fs.mkdirSync(extractDir, { recursive: true });
+    await extractArchive(archive, extractDir);
+    expect(
+      fs.readFileSync(path.join(extractDir, 'data', 'groups', name), 'utf8'),
+    ).toBe('pax-payload');
+  });
 
   test('sweeps an orphaned staging directory left by a previously killed restore', async () => {
     // A `.miniclaw-restore-*` staging dir only survives past a restore
