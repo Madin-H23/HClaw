@@ -2,12 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
+// Windows 适配（#11）：core.autocrlf=true 检出使工作区源码为 CRLF，而断言以
+// LF 文本为基准（跨行 needle）。读取后归一为 LF；POSIX 检出无 \r，为 no-op。
+const readSourceLf = (file: string) =>
+  fs
+    .readFileSync(path.join(process.cwd(), file), 'utf8')
+    .replace(/\r\n/g, '\n');
+
 describe('graceful shutdown lifecycle order', () => {
   test('stops intake and agents, terminalizes cards, then disconnects IM', () => {
-    const source = fs.readFileSync(
-      path.join(process.cwd(), 'src/index.ts'),
-      'utf8',
-    );
+    const source = readSourceLf('src/index.ts');
     const shutdownStart = source.indexOf(
       'const shutdown = async (signal: string)',
     );

@@ -93,8 +93,11 @@ function validateArchiveEntries(archivePath) {
     ['-tvzf', archivePath],
     'Unable to inspect backup archive types',
   );
-  const entries = listing.split('\n').filter(Boolean);
-  const entryTypes = verboseListing.split('\n').filter(Boolean);
+  // \r?\n: Windows' system bsdtar writes CRLF listings. A trailing CR would
+  // corrupt the checks below (e.g. the "data/" directory entry becomes
+  // "data\r" and fails the "data/" prefix test). POSIX listings are unchanged.
+  const entries = listing.split(/\r?\n/).filter(Boolean);
+  const entryTypes = verboseListing.split(/\r?\n/).filter(Boolean);
   if (entries.length === 0) throw new Error('Backup archive is empty');
   if (entryTypes.length !== entries.length) {
     throw new Error('Unable to validate every backup archive entry');

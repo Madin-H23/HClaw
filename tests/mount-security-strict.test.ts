@@ -187,10 +187,25 @@ describe.sequential('validateAdditionalMountsStrict', () => {
     ['colon', path.join(allowedRoot, 'colon:name')],
     ['control character', path.join(allowedRoot, 'control\u0007name')],
   ])('rejects a host path containing a %s', async (_label, hostPath) => {
-    fs.mkdirSync(hostPath, { recursive: true });
     writePolicy([{ path: allowedRoot, allowReadWrite: false }]);
     const { validate, ValidationError } = await loadStrictValidator();
 
+    // Windows 适配（#14）：NTFS 不允许创建含冒号/控制字符的目录名（Win32 API
+    // 层直接拒绝），"先造出非法样本目录"的步骤在本平台不可行。校验器对冒号/
+    // 控制字符的拒绝发生在存在性检查之前，故 win32 直接注入非法路径字符串
+    // 断言拒绝（覆盖不弱化；盘符前缀之外的冒号仍被拒绝）；POSIX 维持原样本
+    // 目录流程。
+    if (process.platform === 'win32') {
+      expect(() =>
+        validate(
+          [mount(hostPath, 'unsafe-host-path')],
+          'unsafe-host-path-workspace',
+          false,
+        ),
+      ).toThrow(ValidationError);
+      return;
+    }
+    fs.mkdirSync(hostPath, { recursive: true });
     expect(() =>
       validate(
         [mount(hostPath, 'unsafe-host-path')],

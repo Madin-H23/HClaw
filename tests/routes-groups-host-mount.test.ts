@@ -346,8 +346,30 @@ describe('POST /api/groups additional_mounts strict validation', () => {
     ['colon', path.join(allowedRoot, 'colon:name')],
     ['control character', path.join(allowedRoot, 'control\u0007name')],
   ])('rejects a host path containing a %s', async (_label, hostPath) => {
-    fs.mkdirSync(hostPath, { recursive: true });
+    // Windows 适配（#14）：NTFS 不允许创建含冒号/控制字符的目录名（Win32 API
+    // 层直接拒绝），"先造出非法样本目录"的步骤在本平台不可行。校验器对冒号/
+    // 控制字符的拒绝发生在存在性检查之前，故 win32 直接把非法路径交给
+    // createWorkspace 断言 400（覆盖不弱化；盘符前缀之外的冒号仍被拒绝）；
+    // POSIX 维持原样本目录流程。
     const name = uniqueName('unsafe-host-path');
+    if (process.platform === 'win32') {
+      const { response: winResponse, body: winBody } = await createWorkspace({
+        name,
+        execution_mode: 'container',
+        additional_mounts: [
+          {
+            host_path: hostPath,
+            container_path: 'unsafe-host-path',
+            readonly: true,
+          },
+        ],
+      });
+      expect(winResponse.status).toBe(400);
+      expect(winBody.code).toBe('INVALID_ADDITIONAL_MOUNTS');
+      expect(groupsNamed(name)).toHaveLength(0);
+      return;
+    }
+    fs.mkdirSync(hostPath, { recursive: true });
     const { response, body } = await createWorkspace({
       name,
       execution_mode: 'container',

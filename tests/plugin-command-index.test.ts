@@ -37,10 +37,7 @@ vi.mock('../src/logger.js', () => ({
 const pluginUtils = await import('../src/plugin-utils.js');
 const cmdIndex = await import('../src/plugin-command-index.js');
 
-const {
-  writeUserPluginsV2,
-  getUserPluginRuntimePath,
-} = pluginUtils;
+const { writeUserPluginsV2, getUserPluginRuntimePath } = pluginUtils;
 const {
   buildCommandIndex,
   resolveCommand,
@@ -118,9 +115,23 @@ afterEach(() => {
 describe('isBuiltinCommandName', () => {
   test('covers all 17 builtin command names', () => {
     for (const name of [
-      'clear', 'list', 'ls', 'status', 'recall', 'rc', 'where',
-      'unbind', 'bind', 'new', 'require_mention', 'owner_mention',
-      'sw', 'spawn', 'allow', 'disallow', 'allowlist',
+      'clear',
+      'list',
+      'ls',
+      'status',
+      'recall',
+      'rc',
+      'where',
+      'unbind',
+      'bind',
+      'new',
+      'require_mention',
+      'owner_mention',
+      'sw',
+      'spawn',
+      'allow',
+      'disallow',
+      'allowlist',
     ]) {
       expect(isBuiltinCommandName(name)).toBe(true);
     }
@@ -181,7 +192,12 @@ describe('buildCommandIndex — YAML frontmatter parsing', () => {
     // Body preserves whatever follows the closing `---` delimiter — does not
     // strip a leading blank line if the source had one.
     expect(e.body.endsWith('Run a Codex review.\n')).toBe(true);
-    expect(e.commandFile.endsWith('/commands/review.md')).toBe(true);
+    // Windows 适配（#11 票面清单）：commandFile 是真实文件系统路径，分隔符随
+    // 平台（path.join 产物）；断言语义是"位于 commands 目录下的 review.md"，
+    // 归一化分隔符后比较，POSIX 行为不变。
+    expect(
+      e.commandFile.split(path.sep).join('/').endsWith('/commands/review.md'),
+    ).toBe(true);
   });
 
   test('malformed YAML frontmatter degrades to empty frontmatter + body keeps full text after delimiters', async () => {
@@ -194,8 +210,7 @@ describe('buildCommandIndex — YAML frontmatter parsing', () => {
         {
           name: 'broken',
           // ': : :' is invalid YAML mapping
-          content:
-            '---\n: : :\n: invalid yaml ::\n---\n\nbody text\n',
+          content: '---\n: : :\n: invalid yaml ::\n---\n\nbody text\n',
         },
       ],
     });

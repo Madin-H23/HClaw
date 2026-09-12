@@ -2,12 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
+// Windows 适配（#11）：core.autocrlf=true 检出使工作区源码为 CRLF，而断言以
+// LF 文本为基准（跨行 needle）。读取后归一为 LF；POSIX 检出无 \r，为 no-op。
+const readSourceLf = (file: string) =>
+  fs
+    .readFileSync(path.join(process.cwd(), file), 'utf8')
+    .replace(/\r\n/g, '\n');
+
 describe('Feishu route safety integration', () => {
   test('treats a configured resolver returning null as a dropped message', () => {
-    const source = fs.readFileSync(
-      path.join(process.cwd(), 'src/feishu.ts'),
-      'utf8',
-    );
+    const source = readSourceLf('src/feishu.ts');
 
     expect(source).toContain('resolveAdmittedChannelRoute<FeishuMessageMeta>');
     expect(source).toContain(
@@ -17,10 +21,7 @@ describe('Feishu route safety integration', () => {
   });
 
   test('bootstraps an unregistered P2P chat before the route check, so the first-ever DM is not fail-closed forever', () => {
-    const source = fs.readFileSync(
-      path.join(process.cwd(), 'src/feishu.ts'),
-      'utf8',
-    );
+    const source = readSourceLf('src/feishu.ts');
 
     // P2P has no external "bot added" event like groups (onBotAddedToGroup)
     // and no /pair step like other channels, so the first DM must be able
