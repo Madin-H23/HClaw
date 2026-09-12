@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { rmTempDirWithRetry } from './helpers/win-fs-retry.js';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fk-repair-test-'));
 const tmpStoreDir = path.join(tmpDir, 'db');
@@ -15,13 +16,14 @@ vi.mock('../src/config.js', async () => ({
   GROUPS_DIR: tmpGroupsDir,
 }));
 
-const { initDatabase, ensureChatExists, storeMessageDirect } =
+const { initDatabase, closeDatabase, ensureChatExists, storeMessageDirect } =
   await import('../src/db.js');
 
 const dbPath = path.join(tmpStoreDir, 'messages.db');
 
-afterAll(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+afterAll(async () => {
+  closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
 });
 
 describe('startup foreign-key orphan repair', () => {
@@ -47,6 +49,9 @@ describe('startup foreign-key orphan repair', () => {
     raw.close();
 
     // Restart: repair should delete the orphans and keep enforcement enabled.
+    // initDatabase 无幂等守卫会重绑模块级连接，重启前先关旧连接，
+    // 否则首根连接泄漏、afterAll 清理时 messages.db 仍被持有（EPERM）。
+    closeDatabase();
     initDatabase();
     const probe = new Database(dbPath, { readonly: true });
     expect(

@@ -12,6 +12,7 @@ import {
   test,
   vi,
 } from 'vitest';
+import { rmTempDirWithRetry } from './helpers/win-fs-retry.js';
 
 const tmpDir = fs.mkdtempSync(
   path.join(os.tmpdir(), 'miniclaw-provider-runtime-apply-'),
@@ -153,8 +154,9 @@ afterEach(async () => {
   }
 });
 
-afterAll(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+afterAll(async () => {
+  db.closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
 });
 
 describe('provider runtime apply is a lossless configuration mutation', () => {

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { rmTempDirWithRetry } from './helpers/win-fs-retry.js';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'channel-mounts-test-'));
 const tmpStoreDir = path.join(tmpDir, 'db');
@@ -61,6 +62,7 @@ seedDb.close();
 
 const {
   initDatabase,
+  closeDatabase,
   setRegisteredGroup,
   getRegisteredGroup,
   updateRegisteredGroupAvatar,
@@ -78,9 +80,10 @@ beforeAll(() => {
   probeDb = new Database(dbPath, { readonly: true });
 });
 
-afterAll(() => {
+afterAll(async () => {
   probeDb?.close();
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
 });
 
 describe('channel_mounts compatibility model', () => {

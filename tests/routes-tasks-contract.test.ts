@@ -11,6 +11,7 @@ import {
   test,
   vi,
 } from 'vitest';
+import { rmTempDirWithRetry, withFsRetry } from './helpers/win-fs-retry.js';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'routes-tasks-contract-'));
 const tmpStoreDir = path.join(tmpDir, 'db');
@@ -212,13 +213,16 @@ afterEach(() => {
   delete process.env.MINICLAW_TEST_USER_ROLE;
 });
 
-afterAll(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+afterAll(async () => {
+  db.closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
 });
 
 describe('tasks route ownership and cleanup contract', () => {
   test('admin host-only mode rejects explicit Docker task creation', async () => {
-    runtimeConfig.saveSystemSettings({ adminHostOnlyMode: true });
+    await withFsRetry(() =>
+      runtimeConfig.saveSystemSettings({ adminHostOnlyMode: true }),
+    );
     asUser(OWNER_ID, 'admin');
     try {
       const response = await tasksRoutes.request('/', {
@@ -251,7 +255,9 @@ describe('tasks route ownership and cleanup contract', () => {
         code: 'ADMIN_HOST_ONLY_MODE_ENABLED',
       });
     } finally {
-      runtimeConfig.saveSystemSettings({ adminHostOnlyMode: false });
+      await withFsRetry(() =>
+        runtimeConfig.saveSystemSettings({ adminHostOnlyMode: false }),
+      );
     }
   });
 

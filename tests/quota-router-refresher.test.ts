@@ -35,6 +35,7 @@ import {
   type FakeQuotaTool,
   type QuotaQueryResult,
 } from './quota-router-stubs/fake-quota-tool.js';
+import { withFsRetry } from './helpers/win-fs-retry.js';
 
 const CONFIG_FILE = path.join(tmp, 'config', 'quota-router.json');
 const CRED_FILE = path.join(tmp, 'config', 'quota-router-credentials.json');
@@ -126,13 +127,13 @@ interface Rig {
   config: InstanceType<typeof QuotaRouterConfigLoader>;
 }
 
-function buildRig(options?: {
+async function buildRig(options?: {
   enrollCredentials?: boolean;
   /** 故障注入：包住真实快照库（P1 存储层异常吸收测试用），inner 仍登记关闭 */
   wrapSnapshots?: (
     inner: InstanceType<typeof QuotaSnapshotStore>,
   ) => InstanceType<typeof QuotaSnapshotStore>;
-}): Rig {
+}): Promise<Rig> {
   const loader = new QuotaRouterConfigLoader(CONFIG_FILE);
   const credentials = new QuotaCredentialStore(CRED_FILE);
   if (options?.enrollCredentials !== false) {
@@ -142,10 +143,12 @@ function buildRig(options?: {
       'opencode-profile': 'opencode',
       'deepseek-profile': 'deepseek',
     })) {
-      credentials.save(profileId, {
-        quotaToolProvider: mapping,
-        credentials: { token: `cred-${profileId}` },
-      });
+      await withFsRetry(() =>
+        credentials.save(profileId, {
+          quotaToolProvider: mapping,
+          credentials: { token: `cred-${profileId}` },
+        }),
+      );
     }
   }
   const snapshots = new QuotaSnapshotStore(DB_PATH);
@@ -189,7 +192,7 @@ describe('mapping/credential absence defaults to missing (fail-open pass-through
   test('unmapped provider → missing, and no HTTP request is attempted at all', async () => {
     const fixture = await start();
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig();
+    const rig = await buildRig();
     const result = await rig.refresher.getSnapshot('not-in-config');
     expect(isMissingSnapshot(result)).toBe(true);
     expect(result).toEqual({ providerId: 'not-in-config', missing: true });
@@ -199,7 +202,7 @@ describe('mapping/credential absence defaults to missing (fail-open pass-through
   test('mapped but credentials not enrolled → missing (no snapshot fabricated)', async () => {
     const fixture = await start();
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig({ enrollCredentials: false });
+    const rig = await buildRig({ enrollCredentials: false });
     const result = await rig.refresher.getSnapshot('volcano-profile');
     expect(isMissingSnapshot(result)).toBe(true);
     expect(fixture.requests).toHaveLength(0); // 凭证层先于 HTTP 收口（不发起查询）
@@ -210,7 +213,7 @@ describe('TTL lazy refresh', () => {
   test('fresh snapshot (data time within TTL) is served with zero network requests', async () => {
     const fixture = await start();
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig();
+    const rig = await buildRig();
     rig.snapshots.upsert({
       providerId: 'volcano-profile',
       tier: 'plenty',
@@ -237,7 +240,7 @@ describe('TTL lazy refresh', () => {
       },
     });
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig();
+    const rig = await buildRig();
     rig.snapshots.upsert({
       providerId: 'volcano-profile',
       tier: 'plenty',
@@ -264,7 +267,7 @@ describe('TTL lazy refresh', () => {
       volcano: { kind: 'success', result: afpResult(10) },
     });
     writeConfigWithBaseUrl(fixture.baseUrl, { snapshotTtlMs: 60_000 });
-    const rig = buildRig();
+    const rig = await buildRig();
     rig.snapshots.upsert({
       providerId: 'volcano-profile',
       tier: 'critical',
@@ -284,7 +287,7 @@ describe('TTL lazy refresh', () => {
       volcano: { kind: 'success', result: afpResult(75) }, // 已用 75% → 剩余 25 → 紧张
     });
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig();
+    const rig = await buildRig();
     rig.snapshots.upsert({
       providerId: 'volcano-profile',
       tier: 'plenty',
@@ -309,7 +312,7 @@ describe('single-flight debounce', () => {
       volcano: { kind: 'success', result: afpResult(50) },
     });
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig();
+    const rig = await buildRig();
     const [a, b] = await Promise.all([
       rig.refresher.getSnapshot('volcano-profile'),
       rig.refresher.getSnapshot('volcano-profile'),
@@ -349,7 +352,7 @@ describe('refresh failure keeps routing alive (ADR-0004 fail-open branches)', ()
   test('credential rejection: stale snapshot is served as-is (data time marks staleness)', async () => {
     const fixture = await start({ volcano: credentialRejected() });
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig();
+    const rig = await buildRig();
     seedStale(rig, 600_000);
     const result = await rig.refresher.getSnapshot('volcano-profile');
     expect(isMissingSnapshot(result)).toBe(false);
@@ -366,7 +369,7 @@ describe('refresh failure keeps routing alive (ADR-0004 fail-open branches)', ()
     await fixture.stop();
     fixtures.length = 0;
     writeConfigWithBaseUrl(baseUrl);
-    const rig = buildRig();
+    const rig = await buildRig();
 
     seedStale(rig, 600_000);
     const stale = await rig.refresher.getSnapshot('volcano-profile');
@@ -379,11 +382,13 @@ describe('refresh failure keeps routing alive (ADR-0004 fail-open branches)', ()
   test('provider-level ok:false with no snapshot → missing (unregistered vendor mapping)', async () => {
     const fixture = await start(); // 无脚本：未知厂家
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig();
-    rig.credentials.save('volcano-profile', {
-      quotaToolProvider: 'volcano',
-      credentials: { accessKeyId: 'ak' },
-    });
+    const rig = await buildRig();
+    await withFsRetry(() =>
+      rig.credentials.save('volcano-profile', {
+        quotaToolProvider: 'volcano',
+        credentials: { accessKeyId: 'ak' },
+      }),
+    );
     const result = await rig.refresher.getSnapshot('volcano-profile');
     expect(result).toEqual({ providerId: 'volcano-profile', missing: true });
   });
@@ -395,7 +400,7 @@ describe('refresh failure keeps routing alive (ADR-0004 fail-open branches)', ()
     writeConfigWithBaseUrl(fixture.baseUrl, {
       quotaTool: { baseUrl: fixture.baseUrl, timeoutMs: 60 },
     });
-    const rig = buildRig();
+    const rig = await buildRig();
     seedStale(rig, 600_000);
     const result = await rig.refresher.getSnapshot('volcano-profile');
     expect(isMissingSnapshot(result)).toBe(false);
@@ -428,7 +433,7 @@ describe('config hot reload (no UI, file edit takes effect on access)', () => {
       },
     });
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig();
+    const rig = await buildRig();
 
     const before = await rig.refresher.refreshNow('opencode-profile');
     expect(isMissingSnapshot(before)).toBe(false);
@@ -460,11 +465,13 @@ describe('config hot reload (no UI, file edit takes effect on access)', () => {
       volcano: { kind: 'success', result: afpResult(50) },
     });
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig();
-    rig.credentials.save('volcano-profile', {
-      quotaToolProvider: 'volcano',
-      credentials: { accessKeyId: 'ak' },
-    });
+    const rig = await buildRig();
+    await withFsRetry(() =>
+      rig.credentials.save('volcano-profile', {
+        quotaToolProvider: 'volcano',
+        credentials: { accessKeyId: 'ak' },
+      }),
+    );
     expect(
       isMissingSnapshot(await rig.refresher.refreshNow('volcano-profile')),
     ).toBe(false);
@@ -507,7 +514,7 @@ describe('storage layer exceptions are absorbed (P1: never rejects, ADR-0004)', 
   test('snapshot read throws + service unreachable → resolves missing, does not reject', async () => {
     const fixture = await start(); // 无脚本：查询走 unknown-vendor 失败路
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig({
+    const rig = await buildRig({
       wrapSnapshots: (inner) => flakyStore(inner, { get: diskError }),
     });
 
@@ -522,7 +529,7 @@ describe('storage layer exceptions are absorbed (P1: never rejects, ADR-0004)', 
       volcano: { kind: 'success', result: afpResult(96) },
     });
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig({
+    const rig = await buildRig({
       wrapSnapshots: (inner) =>
         flakyStore(inner, { get: diskError, upsert: diskError }),
     });
@@ -543,7 +550,7 @@ describe('storage layer exceptions are absorbed (P1: never rejects, ADR-0004)', 
       volcano: { kind: 'success', result: afpResult(96) },
     });
     writeConfigWithBaseUrl(fixture.baseUrl);
-    const rig = buildRig({
+    const rig = await buildRig({
       wrapSnapshots: (inner) => flakyStore(inner, { get: diskError }),
     });
 
@@ -559,10 +566,12 @@ describe('storage layer exceptions are absorbed (P1: never rejects, ADR-0004)', 
     openStores.push(inner);
     const config = new QuotaRouterConfigLoader(CONFIG_FILE);
     const credentials = new QuotaCredentialStore(CRED_FILE);
-    credentials.save('volcano-profile', {
-      quotaToolProvider: 'volcano',
-      credentials: { token: 't' },
-    });
+    await withFsRetry(() =>
+      credentials.save('volcano-profile', {
+        quotaToolProvider: 'volcano',
+        credentials: { token: 't' },
+      }),
+    );
     const refresher = new QuotaSnapshotRefresher({
       config,
       credentials,

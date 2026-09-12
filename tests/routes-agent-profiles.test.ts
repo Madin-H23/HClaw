@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { rmTempDirWithRetry } from './helpers/win-fs-retry.js';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'routes-agent-profiles-'));
 const tmpDataDir = path.join(tmpDir, 'data');
@@ -128,8 +129,9 @@ beforeAll(() => {
   );
 });
 
-afterAll(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+afterAll(async () => {
+  db.closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
 });
 
 describe('/api/agent-profiles routes', () => {

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { rmTempDirWithRetry } from './helpers/win-fs-retry.js';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-prompt-v48-'));
 const tmpStoreDir = path.join(tmpDir, 'db');
@@ -46,7 +47,12 @@ beforeAll(() => {
   legacy.close();
 });
 
-afterAll(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+afterAll(async () => {
+  // db 连接在用例内动态导入创建，close 必须在同一模块注册表上执行
+  const db = await import('../src/db.js');
+  db.closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
+});
 
 describe('AgentProfile v48 prompt migration', () => {
   test('moves the old prompt to AGENTS without data loss and snapshots it', async () => {
