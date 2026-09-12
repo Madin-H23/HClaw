@@ -1,5 +1,7 @@
 import './load-env.js'; // 必须最先执行：加载 .env 到 process.env，供后续模块（config/web 等）读取
 import { ChildProcess, execFile } from 'child_process';
+import type { ChannelId } from './channel-registry.js';
+import { CHANNEL_IDS } from './channel-registry.js';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -19530,14 +19532,8 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
 
 function syncLegacyConfigToDefaultChannelAccount(
   userId: string,
-  channel:
-    | 'feishu'
-    | 'telegram'
-    | 'qq'
-    | 'wechat'
-    | 'dingtalk'
-    | 'discord'
-    | 'whatsapp',
+  // ADR-0009：渠道 id 从注册表派生（原为手写七值联合）
+  channel: ChannelId,
 ): ChannelAccount | null {
   if (channel === 'feishu') {
     const value = getUserFeishuConfig(userId);
@@ -19997,14 +19993,8 @@ async function main(): Promise<void> {
   // Reload a per-user IM channel (hot-reload on user-im config save)
   const reloadUserIMConfig = async (
     userId: string,
-    channel:
-      | 'feishu'
-      | 'telegram'
-      | 'qq'
-      | 'wechat'
-      | 'dingtalk'
-      | 'discord'
-      | 'whatsapp',
+    // ADR-0009：渠道 id 从注册表派生（原为手写七值联合）
+    channel: ChannelId,
   ): Promise<boolean> => {
     const homeGroup = getUserHomeGroup(userId);
     if (!homeGroup) {
@@ -20317,23 +20307,8 @@ async function main(): Promise<void> {
     // 解封：disconnectAllUserChannels 把 user 标 sealed 后，所有 connectChannel
     // 都被拒。re-enable / restore 用户时必须先解封否则 reload 全部失败。
     imManager.markUserReconnectable(userId);
-    const channels: Array<
-      | 'feishu'
-      | 'telegram'
-      | 'qq'
-      | 'wechat'
-      | 'dingtalk'
-      | 'discord'
-      | 'whatsapp'
-    > = [
-      'feishu',
-      'telegram',
-      'qq',
-      'wechat',
-      'dingtalk',
-      'discord',
-      'whatsapp',
-    ];
+    // ADR-0009：渠道清单从注册表派生（原为手写七值联合 + 字面量数组，顺序=注册表序）
+    const channels: readonly ChannelId[] = CHANNEL_IDS;
     await Promise.allSettled(
       channels.map((channel) => reloadUserIMConfig(userId, channel)),
     );

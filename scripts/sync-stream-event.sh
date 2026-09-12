@@ -35,7 +35,17 @@ for target in \
   sync_file "$SRC_ID" "$target"
 done
 
-# --- Channel prefixes (2 targets: backend + agent-runner; not needed by web) ---
+# --- Channel registry (3 targets: backend + agent-runner + web) ---
+SRC_CR="$ROOT/shared/channel-registry.ts"
+for target in \
+  "$ROOT/src/channel-registry.ts" \
+  "$ROOT/container/agent-runner/src/channel-registry.ts" \
+  "$ROOT/web/src/channel-registry.ts" \
+; do
+  sync_file "$SRC_CR" "$target"
+done
+
+# --- Channel prefixes (2 targets: backend + agent-runner; web uses the registry copy) ---
 SRC_CP="$ROOT/shared/channel-prefixes.ts"
 for target in \
   "$ROOT/src/channel-prefixes.ts" \

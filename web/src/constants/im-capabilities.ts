@@ -1,3 +1,5 @@
+import { CHANNEL_IDS } from '../channel-registry';
+
 export interface ImChannelCapabilities {
   channel_type: string;
   label: string;
@@ -10,15 +12,8 @@ export interface ImChannelCapabilities {
   supports_file_send: boolean;
 }
 
-export const IM_CHANNEL_ORDER = [
-  'feishu',
-  'telegram',
-  'qq',
-  'wechat',
-  'dingtalk',
-  'discord',
-  'whatsapp',
-] as const;
+// ADR-0009：渠道顺序从注册表派生（原为手写 as const 清单，顺序=注册表序）
+export const IM_CHANNEL_ORDER = CHANNEL_IDS;
 
 export type ImChannelType = (typeof IM_CHANNEL_ORDER)[number];
 

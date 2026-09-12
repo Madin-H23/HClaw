@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import type { ChannelId } from './channel-registry.js';
 import { GROUPS_DIR, MAX_FILE_SIZE } from './config.js';
 
 // MAX_FILE_SIZE 统一由 config.ts 定义（可通过 MAX_FILE_SIZE_MB 环境变量配置），
@@ -57,14 +58,8 @@ export function sanitizeImFilename(raw: string | undefined | null): string {
  */
 export async function saveDownloadedFile(
   groupFolder: string,
-  channel:
-    | 'feishu'
-    | 'telegram'
-    | 'qq'
-    | 'wechat'
-    | 'dingtalk'
-    | 'discord'
-    | 'whatsapp',
+  // ADR-0009：渠道 id 从注册表派生（原为手写七值联合）
+  channel: ChannelId,
   originalFilename: string,
   buffer: Buffer,
 ): Promise<string> {

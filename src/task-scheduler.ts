@@ -1,6 +1,7 @@
 import { ChildProcess } from 'child_process';
 import { randomUUID } from 'node:crypto';
 import { CronExpressionParser } from 'cron-parser';
+import { CHANNEL_IDS } from './channel-registry.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -2972,15 +2973,8 @@ function retryPayloadForReceipt(
   ) {
     return payload;
   }
-  const knownChannelTypes = new Set([
-    'feishu',
-    'telegram',
-    'qq',
-    'wechat',
-    'dingtalk',
-    'discord',
-    'whatsapp',
-  ]);
+  // ADR-0009：渠道类型集合从注册表派生（原为手写七值 Set）
+  const knownChannelTypes = new Set<string>(CHANNEL_IDS);
   let failedChannels = receipt.summary.failed_channels.filter((channel) =>
     knownChannelTypes.has(channel),
   );

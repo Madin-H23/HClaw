@@ -1,14 +1,9 @@
 import { create } from 'zustand';
+import type { ChannelId } from '../channel-registry';
 import { api } from '../api/client';
 
-export type ChannelProvider =
-  | 'feishu'
-  | 'telegram'
-  | 'qq'
-  | 'wechat'
-  | 'dingtalk'
-  | 'discord'
-  | 'whatsapp';
+// ADR-0009：渠道 id 联合从注册表派生（原为手写七值联合）
+export type ChannelProvider = ChannelId;
 
 export type ChannelAuthMode = 'credentials' | 'bot_token' | 'qr_session';
 export type ChannelAuthStatus =

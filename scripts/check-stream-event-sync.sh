@@ -35,6 +35,12 @@ check_sync "$ROOT/shared/image-detector.ts" \
   "$ROOT/src/image-detector.ts" \
   "$ROOT/container/agent-runner/src/image-detector.ts"
 
+# Channel registry
+check_sync "$ROOT/shared/channel-registry.ts" \
+  "$ROOT/src/channel-registry.ts" \
+  "$ROOT/container/agent-runner/src/channel-registry.ts" \
+  "$ROOT/web/src/channel-registry.ts"
+
 # Channel prefixes
 check_sync "$ROOT/shared/channel-prefixes.ts" \
   "$ROOT/src/channel-prefixes.ts" \
