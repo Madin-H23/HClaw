@@ -272,6 +272,8 @@ describe('调度器 → 主动消息接线（票 #24）', () => {
         target: FEISHU_TARGET,
         messageKey: taskId,
         triggerKind: 'scheduled-task',
+        // triggerTaskNow = 手动触发；审计可分辨手动/定时（P2-2）
+        triggerType: 'manual',
         // 脚本完成点未穿透 V2 运行 id（runScriptTaskInner 无 durable 入参），
         // runId 设计为 null；来源任务以 taskId 承载
         runId: null,

@@ -57,8 +57,13 @@ export interface ProactiveDeliveryRecord {
   readonly outcome: string;
   /** 决策/失败的一行中文理由（透传，供审计回读） */
   readonly reason: string | null;
-  /** 触发源种类：'scheduled-task'（批三事件总线可扩新值，接口不解耦调度器） */
+  /** 触发源种类：'scheduled-task'（批三事件总线可扩新值；接口与具体触发源解耦，调度器只是第一个实现者） */
   readonly triggerKind: string;
+  /**
+   * 本次运行的触发方式：'manual'=手动触发 / 'scheduled'=按计划触发；
+   * 审计据此区分手动与定时投递。v1 旧行（无此列时代）回读折 'scheduled'。
+   */
+  readonly triggerType: string;
   /** 来源任务 id（触发源为调度器时）；事件总线触发源可为 null */
   readonly taskId: string | null;
   /** 来源任务运行 id（可空：脚本任务无 V2 运行 id） */
@@ -77,7 +82,7 @@ export interface DeliveryRecordFilter {
   readonly limit?: number;
 }
 
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 const CREATE_DELIVERY_RECORDS_SQL = `
   CREATE TABLE IF NOT EXISTS delivery_records (
@@ -127,8 +132,8 @@ export class ProactiveDeliveryLogStore {
         .prepare(
           `INSERT INTO delivery_records
              (channel_id, target, message_key, outcome, reason,
-              trigger_kind, task_id, run_id, created_at_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              trigger_kind, trigger_type, task_id, run_id, created_at_ms)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           record.channelId,
@@ -137,6 +142,7 @@ export class ProactiveDeliveryLogStore {
           record.outcome,
           record.reason,
           record.triggerKind,
+          record.triggerType,
           record.taskId,
           record.runId,
           record.createdAtMs,
@@ -181,7 +187,7 @@ export class ProactiveDeliveryLogStore {
       const rows = this.db
         .prepare(
           `SELECT channel_id, target, message_key, outcome, reason,
-                  trigger_kind, task_id, run_id, created_at_ms
+                  trigger_kind, trigger_type, task_id, run_id, created_at_ms
            FROM delivery_records ${where}
            ORDER BY created_at_ms DESC, id DESC
            LIMIT ?`,
@@ -194,6 +200,11 @@ export class ProactiveDeliveryLogStore {
         outcome: String(row.outcome),
         reason: row.reason === null ? null : String(row.reason),
         triggerKind: String(row.trigger_kind),
+        // v1 旧行（迁移补列默认 'scheduled'）与新行统一回读
+        triggerType:
+          row.trigger_type === null || row.trigger_type === undefined
+            ? 'scheduled'
+            : String(row.trigger_type),
         taskId: row.task_id === null ? null : String(row.task_id),
         runId: row.run_id === null ? null : String(row.run_id),
         createdAtMs: Number(row.created_at_ms),
@@ -246,6 +257,12 @@ export class ProactiveDeliveryLogStore {
     if (version >= CURRENT_VERSION) return;
     this.db.exec(CREATE_DELIVERY_RECORDS_SQL);
     this.db.exec(CREATE_INDEX_SQL);
+    if (version < 2) {
+      // v1 -> v2：补 trigger_type 列（v1 时代全部按计划触发，缺省 'scheduled'）
+      this.db.exec(
+        `ALTER TABLE delivery_records ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'scheduled'`,
+      );
+    }
     this.db.exec(`PRAGMA user_version = ${CURRENT_VERSION}`);
   }
 }

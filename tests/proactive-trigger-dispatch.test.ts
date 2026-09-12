@@ -8,6 +8,7 @@ import type { ChannelId } from '../src/channel-registry.js';
 import { logger } from '../src/logger.js';
 import { ProactiveMessageAssembly } from '../src/proactive-message/delivery-assembly.js';
 import { ProactiveMessageConfigLoader } from '../src/proactive-message/config.js';
+import DatabaseConstructor from '../src/sqlite-compat.js';
 import {
   ProactiveDeliveryLogStore,
   type ProactiveDeliveryRecord,
@@ -157,6 +158,7 @@ function makeRequest(
     content: '【定时任务 晨检】\n全部探活正常',
     channels: ['feishu'],
     sourceTask: { taskId: 'task-morning-check', runId: 'run-1' },
+    triggerType: 'scheduled',
     ...overrides,
   };
 }
@@ -278,6 +280,7 @@ describe('投递记录可查询（SPEC user story 10）', () => {
         messageKey: 'task-b',
         outcome: 'sent',
         triggerKind: 'scheduled-task',
+        triggerType: 'scheduled',
         taskId: 'task-b',
         runId: null,
         createdAtMs: laterMs,
@@ -395,7 +398,7 @@ describe('兜底承接', () => {
       async () => {
         throw new Error('装配自身意外');
       },
-      makeRequest(),
+      makeRequest({ triggerType: 'manual' }),
       { deliveryLog: fixture.deliveryLog },
     );
 
@@ -405,9 +408,14 @@ describe('兜底承接', () => {
       reason: expect.stringContaining('投递异常：装配自身意外'),
     });
     expect(summary.failedCount).toBe(1);
-    expect(
-      fixture.deliveryLog.queryDeliveries({ outcome: 'send-failed' }),
-    ).toHaveLength(1);
+    const [record] = fixture.deliveryLog.queryDeliveries({
+      outcome: 'send-failed',
+    });
+    expect(record).toMatchObject({
+      channelId: 'feishu',
+      // 触发方式贯穿进审计：手动触发的失败可分辨（P2-2）
+      triggerType: 'manual',
+    });
   });
 
   test('适配器发送抛错：send-failed，审计留痕，失败计数供运行日志留痕', async () => {
@@ -474,6 +482,67 @@ describe('补发语义', () => {
 
 // ─── 声明渠道归一化 + 生产工厂 ───────────────────────────────
 
+describe('审计库 v1→v2 迁移（trigger_type 补列）', () => {
+  test('v1 旧库打开即补列，旧行回读折 triggerType=scheduled，新写可用', async () => {
+    const dir = makeFixtureDir('proactive-log-migration-');
+    const dbPath = path.join(dir, 'audit.db');
+    // 手工搭一个 v1 形态的库并预置一行（无 trigger_type 列、user_version=1）
+    const raw = new DatabaseConstructor(dbPath);
+    raw.exec(`
+      CREATE TABLE delivery_records (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel_id     TEXT NOT NULL,
+        target         TEXT,
+        message_key    TEXT NOT NULL,
+        outcome        TEXT NOT NULL,
+        reason         TEXT,
+        trigger_kind   TEXT NOT NULL,
+        task_id        TEXT,
+        run_id         TEXT,
+        created_at_ms  INTEGER NOT NULL
+      );
+      PRAGMA user_version = 1;
+    `);
+    raw
+      .prepare(
+        `INSERT INTO delivery_records
+           (channel_id, target, message_key, outcome, reason,
+            trigger_kind, task_id, run_id, created_at_ms)
+         VALUES ('feishu', 'ou_legacy', 'task-legacy', 'sent', 'ok',
+                 'scheduled-task', 'task-legacy', NULL, 1000)`,
+      )
+      .run();
+    raw.close();
+
+    const store = new ProactiveDeliveryLogStore(dbPath);
+    openLogs.push(store);
+    const [legacy] = store.queryDeliveries();
+    expect(legacy).toMatchObject({
+      outcome: 'sent',
+      triggerKind: 'scheduled-task',
+      // v1 旧行无触发方式语义 → 统一折按计划触发
+      triggerType: 'scheduled',
+    });
+    // 迁移后的库可正常写新形态记录（含 trigger_type）
+    store.recordDelivery({
+      channelId: 'dingtalk',
+      target: 'c2c:new',
+      messageKey: 'task-new',
+      outcome: 'sent',
+      reason: 'ok',
+      triggerKind: 'scheduled-task',
+      triggerType: 'manual',
+      taskId: 'task-new',
+      runId: null,
+      createdAtMs: 2000,
+    });
+    expect(store.queryDeliveries().map((row) => row.triggerType)).toEqual([
+      'manual',
+      'scheduled',
+    ]);
+  });
+});
+
 describe('normalizeDeclaredChannels', () => {
   test('登记外 id 过滤并告警、去重保序、空值折空', () => {
     expect(normalizeDeclaredChannels(['feishu', 'feishu', 'dingtalk'])).toEqual(
@@ -517,6 +586,7 @@ describe('createSchedulerProactiveNotifier（生产工厂）', () => {
     const summary = await notify({
       taskId: 'task-x',
       runId: 'run-x1',
+      triggerType: 'scheduled',
       notifyChannels: ['feishu', 'sms'],
       content: '晨检正常',
     });
@@ -537,6 +607,7 @@ describe('createSchedulerProactiveNotifier（生产工厂）', () => {
     const empty = await notify({
       taskId: 'task-y',
       runId: null,
+      triggerType: 'scheduled',
       notifyChannels: [],
       content: '无声明',
     });
@@ -559,6 +630,7 @@ describe('createSchedulerProactiveNotifier（生产工厂）', () => {
     const summary = await notify({
       taskId: 'task-z',
       runId: null,
+      triggerType: 'scheduled',
       notifyChannels: ['feishu'],
       content: 'x',
     });

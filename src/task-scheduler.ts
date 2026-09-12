@@ -847,7 +847,8 @@ function appendProactiveDeliveryFailureTrace(
  * 共用）。承接 B3 审查移交②：每次触发包一层兜底 catch + 结构化日志——注入
  * 闭包与分发器承诺不 reject，此 catch 是最终防线，任何意外都不得逃进调度
  * 收尾路径（更不得炸调度循环）。未装配 dep（undefined）或任务未声明渠道或
- * 无可投内容 → no-op（与上游行为一致）。
+ * 无可投内容 → no-op（与上游行为一致）。与旧投递路径并存，双投收敛策略
+ * 悬置 B5（proactive-message/trigger-dispatch.ts 文件头）。
  */
 async function notifyTaskResultProactive(
   taskId: string,
@@ -1594,7 +1595,9 @@ async function runTaskInner(
   // （本文件只生产 SchedulerProactiveTriggerInput，实现见
   // proactive-message/trigger-dispatch.ts）；补发语义 = 本完成点每次触发照常
   // 调用（hold 由下次触发自然重投，此处不建重试/跳过逻辑）。送达失败痕迹经
-  // appendProactiveDeliveryFailureTrace 留在任务运行日志。
+  // appendProactiveDeliveryFailureTrace 留在任务运行日志。与上方旧投递路径
+  // （storeResultAndNotify）并存，双投收敛策略悬置 B5（见
+  // trigger-dispatch.ts 文件头「与上游旧投递路径的关系」）。
   if (
     task.notify_channels &&
     task.notify_channels.length > 0 &&
@@ -1602,6 +1605,7 @@ async function runTaskInner(
   ) {
     const summary = await notifyTaskResultProactive(task.id, deps, {
       runId: options?.taskRunId ?? options?.durableRun?.id ?? null,
+      triggerType: options?.manualRun ? 'manual' : 'scheduled',
       notifyChannels: task.notify_channels,
       content: `【定时任务 ${scheduledTaskDisplayName(task)}】\n${taskSessionText}`,
     });
@@ -1846,7 +1850,9 @@ async function runScriptTaskInner(
 
   let result: string | null = null;
   let error: string | null = null;
-  // 批二 B4：主动消息投递摘要（送达失败痕迹在主收尾写定运行日志后补写）
+  // 批二 B4：主动消息投递（try 内只备内容，durationMs 定格后投递；送达失败
+  // 痕迹在主收尾写定运行日志后补写）
+  let proactiveContent: string | null = null;
   let proactiveDeliverySummary: ProactiveTriggerDeliverySummary | null = null;
 
   try {
@@ -1909,24 +1915,16 @@ async function runScriptTaskInner(
       }
 
       // 批二 B4（票 #24）：脚本任务结果按声明渠道投递主动消息（探活/晨检类
-      // 薄迁移主场景）。语义与 agent 完成点一致：经频控入口、hold 靠下次
-      // 触发自然补发、兜底 catch 不让意外逃进调度收尾。脚本任务无 V2 运行
-      // id → runId=null。摘要带出——送达失败痕迹须待下方主收尾写定运行日志
-      // 后补写（此处写会被主写覆盖）。
+      // 薄迁移主场景）。此处只备好内容——实际投递在 durationMs 定格之后执行
+      // （投递时延不计入运行时长，对齐 agent 完成点次序：agent 的
+      // lastOutputTime 在收尾前定格，投递天然不计入）。脚本任务无 V2 运行
+      // id → runId=null。
       if (
         deps.notifyTaskResult &&
         task.notify_channels &&
         task.notify_channels.length > 0
       ) {
-        proactiveDeliverySummary = await notifyTaskResultProactive(
-          task.id,
-          deps,
-          {
-            runId: null,
-            notifyChannels: task.notify_channels,
-            content: `【定时任务 ${scheduledTaskDisplayName(task)}】\n${fullText}`,
-          },
-        );
+        proactiveContent = `【定时任务 ${scheduledTaskDisplayName(task)}】\n${fullText}`;
       }
     }
 
@@ -1944,6 +1942,19 @@ async function runScriptTaskInner(
   }
 
   const durationMs = Date.now() - startTime;
+
+  // 批二 B4（票 #24）：主动消息投递（内容已在 try 内备好；durationMs 已定格，
+  // 投递时延不计入运行时长）。补发语义 = 本次照常调用，hold 靠下次触发自然
+  // 重投；兜底 catch 由 notifyTaskResultProactive 承接。与旧投递路径并存，
+  // 双投收敛策略悬置 B5（trigger-dispatch.ts 文件头）。
+  if (proactiveContent) {
+    proactiveDeliverySummary = await notifyTaskResultProactive(task.id, deps, {
+      runId: null,
+      triggerType: manualRun ? 'manual' : 'scheduled',
+      notifyChannels: task.notify_channels ?? [],
+      content: proactiveContent,
+    });
+  }
 
   // 顶层 try/finally 兜底：updateTaskRunLog/safeComputeNextRun/updateTaskAfterRun
   // 任一抛错都不能让任务永久卡在 runningTaskIds（scheduler 主循环会一直跳过）。

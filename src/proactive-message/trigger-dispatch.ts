@@ -37,6 +37,16 @@
  * 重试、不排队、不记忆；触发源（调度器）按原节奏下次触发时重新走完整决策
  * 自然补发。测试以「静默窗口内 hold → 窗口外再触发 sent」端到端钉死。
  *
+ * 与上游旧投递路径的关系（双投现状，收敛策略显式悬置 B5 拍板）：任务完成
+ * 点除本入口外还保留上游投递面（storeResultAndNotify → sendImWithRetry：
+ * agent 任务错误通知、脚本任务完成通知，投往任务绑定与 fan-out 渠道）。
+ * 两路对同一渠道的重复投递**不能靠冷却去重吸收**——本入口内容带任务头前缀，
+ * SHA-256 摘要与旧路径原文必异（冷却键含摘要）；且旧路径不写频控库，跨路径
+ * 无账可查。触发面：脚本任务成功场景即**常态双投**（完成点成败两路都走），
+ * agent 任务仅错误场景重叠（成功只有本入口）。收敛二选一——①内容对齐：
+ * 两路共用一份成形文本；②旧路径让位：任务已声明 notify_channels 的渠道上
+ * 旧投递跳过——须结合真机联调定，本票不做任何一侧的静默改动（B5 决策项）。
+ *
  * 生产工厂 createSchedulerProactiveNotifier：供 src/index.ts schedulerDeps
  * 注入级接线（构造不抛错——频控库/审计库构造失败分别降级 fail-open /
  * 免审计，调度启动不因主动消息域故障受阻）；渠道适配器解析缝生产绑定归 B5
@@ -82,6 +92,11 @@ export interface ProactiveTriggerRequest {
     readonly taskId: string;
     readonly runId: string | null;
   };
+  /**
+   * 本次运行的触发方式（调度器源：'manual'=手动触发 / 'scheduled'=按计划
+   * 触发），透传进审计使手动/定时可分辨；缺省折 'scheduled'。
+   */
+  readonly triggerType?: 'manual' | 'scheduled';
 }
 
 /** 单渠道投递的可观察结果（审计口径，与频控库的「实际发送」口径不同） */
@@ -224,6 +239,7 @@ export async function deliverProactiveTrigger(
           outcome,
           reason,
           triggerKind: request.triggerKind,
+          triggerType: request.triggerType ?? 'scheduled',
           taskId: request.sourceTask?.taskId ?? null,
           runId: request.sourceTask?.runId ?? null,
           createdAtMs: nowMs(),
@@ -287,6 +303,8 @@ export interface SchedulerProactiveTriggerInput {
   readonly taskId: string;
   /** V2 运行 id（isolated durable 运行）；脚本任务等无运行 id 时为 null */
   readonly runId: string | null;
+  /** 本次运行的触发方式：manual=手动触发（triggerTaskNow 等）、scheduled=按计划触发 */
+  readonly triggerType: 'manual' | 'scheduled';
   /** 任务声明的通知渠道清单（task.notify_channels 原样透传，归一化在此做） */
   readonly notifyChannels: readonly string[];
   /** 已成形纯文本内容（触发源侧已带任务头，分发器不改写） */
@@ -356,6 +374,7 @@ export function createSchedulerProactiveNotifier(
           content: input.content,
           channels,
           sourceTask: { taskId: input.taskId, runId: input.runId },
+          triggerType: input.triggerType,
         },
         {
           sendTimeoutMs: options.sendTimeoutMs,
