@@ -3,19 +3,14 @@ import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
 const root = process.cwd();
-const agentRunner = fs.readFileSync(
-  path.join(root, 'container/agent-runner/src/index.ts'),
-  'utf8',
-);
-const hostRunner = fs.readFileSync(
-  path.join(root, 'src/container-runner.ts'),
-  'utf8',
-);
-const main = fs.readFileSync(path.join(root, 'src/index.ts'), 'utf8');
-const taskScheduler = fs.readFileSync(
-  path.join(root, 'src/task-scheduler.ts'),
-  'utf8',
-);
+// Windows 适配（#11）：core.autocrlf=true 检出使工作区源码为 CRLF，而断言以
+// LF 文本为基准（跨行 needle）。读取后归一为 LF；POSIX 检出无 \r，为 no-op。
+const readLf = (file: string) =>
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const agentRunner = readLf('container/agent-runner/src/index.ts');
+const hostRunner = readLf('src/container-runner.ts');
+const main = readLf('src/index.ts');
+const taskScheduler = readLf('src/task-scheduler.ts');
 
 describe('provider fallback source contracts', () => {
   test('cold/warm retry uses the failed turn payload rather than startup input', () => {

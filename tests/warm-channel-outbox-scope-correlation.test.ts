@@ -24,8 +24,12 @@ const { ActiveChannelOutboxScopeRegistry } =
   await import('../src/channel-outbox-runtime-scope.js');
 
 const repoRoot = process.cwd();
+// Windows 适配（#11）：core.autocrlf=true 检出使工作区源码为 CRLF，而断言以
+// LF 文本为基准（跨行 needle）。读取后归一为 LF；POSIX 检出无 \r，为 no-op。
 const read = (relativePath: string) =>
-  fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
+  fs
+    .readFileSync(path.join(repoRoot, relativePath), 'utf8')
+    .replace(/\r\n/g, '\n');
 
 function section(source: string, start: string, end: string): string {
   const startIndex = source.indexOf(start);

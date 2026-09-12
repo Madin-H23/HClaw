@@ -2,7 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
-const makefile = fs.readFileSync(path.join(process.cwd(), 'Makefile'), 'utf8');
+// Windows 适配（#11）：core.autocrlf=true 检出使 Makefile 为 CRLF，而断言以
+// LF 文本为基准（跨行正则）。读取后归一为 LF；POSIX 检出无 \r，为 no-op。
+const makefile = fs
+  .readFileSync(path.join(process.cwd(), 'Makefile'), 'utf8')
+  .replace(/\r\n/g, '\n');
 
 describe('Makefile runtime contract', () => {
   test('uses make start as the single production startup path', () => {
