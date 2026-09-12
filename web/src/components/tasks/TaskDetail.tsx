@@ -786,28 +786,33 @@ export function TaskDetail({ task }: TaskDetailProps) {
         <div>
           <div className="text-xs text-muted-foreground mb-1">通知渠道</div>
           {editing ? (
-            <div className="flex flex-wrap gap-2">
-              <label className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                <input type="checkbox" checked disabled className="rounded" />
-                Web
-              </label>
-              {Object.entries(CHANNEL_LABEL)
-                .filter(([key]) => connectedChannels[key])
-                .map(([key, label]) => (
-                  <label
-                    key={key}
-                    className="inline-flex items-center gap-1 text-sm text-foreground cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isChannelSelected(key)}
-                      onChange={() => toggleChannel(key)}
-                      className="rounded"
-                    />
-                    {label}
-                  </label>
-                ))}
-            </div>
+            <>
+              <div className="flex flex-wrap gap-2">
+                <label className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                  <input type="checkbox" checked disabled className="rounded" />
+                  Web
+                </label>
+                {Object.entries(CHANNEL_LABEL)
+                  .filter(([key]) => connectedChannels[key])
+                  .map(([key, label]) => (
+                    <label
+                      key={key}
+                      className="inline-flex items-center gap-1 text-sm text-foreground cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChannelSelected(key)}
+                        onChange={() => toggleChannel(key)}
+                        className="rounded"
+                      />
+                      {label}
+                    </label>
+                  ))}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                勾选后，任务每次完成还会向该渠道的默认私聊会话主动推送结果（受频控节制）；原有的错误/绑定通知另行发送，同一渠道可能重复收到
+              </p>
+            </>
           ) : (
             renderNotifyChannelsBadges()
           )}

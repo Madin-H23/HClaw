@@ -1,5 +1,9 @@
+import { CHANNEL_IDS, CHANNEL_LABELS } from '../channel-registry';
+import type { ChannelId } from '../channel-registry';
+
 export interface ImChannelCapabilities {
-  channel_type: string;
+  /** 渠道 id；与注册表一致（ADR-0009 派生自同一联合） */
+  channel_type: ChannelId;
   label: string;
   can_bind_workspace: boolean;
   can_bind_session: boolean;
@@ -10,15 +14,8 @@ export interface ImChannelCapabilities {
   supports_file_send: boolean;
 }
 
-export const IM_CHANNEL_ORDER = [
-  'feishu',
-  'telegram',
-  'qq',
-  'wechat',
-  'dingtalk',
-  'discord',
-  'whatsapp',
-] as const;
+// ADR-0009：渠道顺序从注册表派生（原为手写 as const 清单，顺序=注册表序）
+export const IM_CHANNEL_ORDER = CHANNEL_IDS;
 
 export type ImChannelType = (typeof IM_CHANNEL_ORDER)[number];
 
@@ -28,7 +25,7 @@ export const IM_CHANNEL_CAPABILITIES: Record<
 > = {
   feishu: {
     channel_type: 'feishu',
-    label: '飞书',
+    label: CHANNEL_LABELS.feishu,
     can_bind_workspace: true,
     can_bind_session: true,
     supports_thread_map: true,
@@ -39,7 +36,7 @@ export const IM_CHANNEL_CAPABILITIES: Record<
   },
   dingtalk: {
     channel_type: 'dingtalk',
-    label: '钉钉',
+    label: CHANNEL_LABELS.dingtalk,
     can_bind_workspace: true,
     can_bind_session: true,
     supports_thread_map: false,
@@ -50,7 +47,7 @@ export const IM_CHANNEL_CAPABILITIES: Record<
   },
   telegram: {
     channel_type: 'telegram',
-    label: 'Telegram',
+    label: CHANNEL_LABELS.telegram,
     can_bind_workspace: true,
     can_bind_session: true,
     supports_thread_map: true,
@@ -61,7 +58,7 @@ export const IM_CHANNEL_CAPABILITIES: Record<
   },
   qq: {
     channel_type: 'qq',
-    label: 'QQ',
+    label: CHANNEL_LABELS.qq,
     can_bind_workspace: true,
     can_bind_session: true,
     supports_thread_map: false,
@@ -72,7 +69,7 @@ export const IM_CHANNEL_CAPABILITIES: Record<
   },
   wechat: {
     channel_type: 'wechat',
-    label: '微信',
+    label: CHANNEL_LABELS.wechat,
     can_bind_workspace: true,
     can_bind_session: true,
     supports_thread_map: false,
@@ -83,7 +80,7 @@ export const IM_CHANNEL_CAPABILITIES: Record<
   },
   discord: {
     channel_type: 'discord',
-    label: 'Discord',
+    label: CHANNEL_LABELS.discord,
     can_bind_workspace: true,
     can_bind_session: true,
     supports_thread_map: false,
@@ -94,7 +91,7 @@ export const IM_CHANNEL_CAPABILITIES: Record<
   },
   whatsapp: {
     channel_type: 'whatsapp',
-    label: 'WhatsApp',
+    label: CHANNEL_LABELS.whatsapp,
     can_bind_workspace: true,
     can_bind_session: true,
     supports_thread_map: false,

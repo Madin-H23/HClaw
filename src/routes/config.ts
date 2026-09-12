@@ -1,6 +1,7 @@
 // Configuration management routes
 
 import { randomBytes, createHash } from 'node:crypto';
+import type { ChannelId } from '../channel-registry.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Agent as HttpsAgent } from 'node:https';
@@ -181,14 +182,8 @@ const configRoutes = new Hono<{ Variables: Variables }>();
  */
 function countOtherEnabledImChannels(
   userId: string,
-  excludeChannel:
-    | 'feishu'
-    | 'telegram'
-    | 'qq'
-    | 'wechat'
-    | 'dingtalk'
-    | 'discord'
-    | 'whatsapp',
+  // ADR-0009：渠道 id 从注册表派生（原为手写七值联合）
+  excludeChannel: ChannelId,
 ): number {
   let count = 0;
   if (excludeChannel !== 'feishu' && getUserFeishuConfig(userId)?.enabled)

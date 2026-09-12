@@ -1,5 +1,7 @@
 import './load-env.js'; // 必须最先执行：加载 .env 到 process.env，供后续模块（config/web 等）读取
 import { ChildProcess, execFile } from 'child_process';
+import type { ChannelId } from './channel-registry.js';
+import { CHANNEL_IDS } from './channel-registry.js';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -453,6 +455,8 @@ import {
   resolveTerminalScheduledGroupPromptRun,
   scheduledGroupPromptMessageId,
 } from './task-scheduler.js';
+import { createSchedulerProactiveNotifier } from './proactive-message/trigger-dispatch.js';
+import { bindImChannelAdapter } from './proactive-message/delivery-assembly.js';
 import { getMergedTaskRunHistory } from './task-run-history.js';
 import { findDuplicateActiveAgentTask } from './task-definition-fingerprint.js';
 import {
@@ -16360,16 +16364,14 @@ async function processAgentConversation(
       runtimeAgentId: agentId,
       runtimeAgentKind: agent.kind,
     });
-    const miniclawOwnerProfileEnabled = isMiniclawOwnerProfileRuntimeEligible(
-      {
-        group: effectiveGroup,
-        profile: agentProfile,
-        turnId: lastProcessed.id,
-        isScheduledTask: Boolean(lastProcessed.task_id),
-        runtimeAgentId: agentId,
-        runtimeAgentKind: agent.kind,
-      },
-    );
+    const miniclawOwnerProfileEnabled = isMiniclawOwnerProfileRuntimeEligible({
+      group: effectiveGroup,
+      profile: agentProfile,
+      turnId: lastProcessed.id,
+      isScheduledTask: Boolean(lastProcessed.task_id),
+      runtimeAgentId: agentId,
+      runtimeAgentKind: agent.kind,
+    });
     const containerInput: ContainerInput = {
       prompt,
       sessionId,
@@ -19530,14 +19532,8 @@ async function reloadChannelAccountById(accountId: string): Promise<boolean> {
 
 function syncLegacyConfigToDefaultChannelAccount(
   userId: string,
-  channel:
-    | 'feishu'
-    | 'telegram'
-    | 'qq'
-    | 'wechat'
-    | 'dingtalk'
-    | 'discord'
-    | 'whatsapp',
+  // ADR-0009：渠道 id 从注册表派生（原为手写七值联合）
+  channel: ChannelId,
 ): ChannelAccount | null {
   if (channel === 'feishu') {
     const value = getUserFeishuConfig(userId);
@@ -19997,14 +19993,8 @@ async function main(): Promise<void> {
   // Reload a per-user IM channel (hot-reload on user-im config save)
   const reloadUserIMConfig = async (
     userId: string,
-    channel:
-      | 'feishu'
-      | 'telegram'
-      | 'qq'
-      | 'wechat'
-      | 'dingtalk'
-      | 'discord'
-      | 'whatsapp',
+    // ADR-0009：渠道 id 从注册表派生（原为手写七值联合）
+    channel: ChannelId,
   ): Promise<boolean> => {
     const homeGroup = getUserHomeGroup(userId);
     if (!homeGroup) {
@@ -20317,23 +20307,8 @@ async function main(): Promise<void> {
     // 解封：disconnectAllUserChannels 把 user 标 sealed 后，所有 connectChannel
     // 都被拒。re-enable / restore 用户时必须先解封否则 reload 全部失败。
     imManager.markUserReconnectable(userId);
-    const channels: Array<
-      | 'feishu'
-      | 'telegram'
-      | 'qq'
-      | 'wechat'
-      | 'dingtalk'
-      | 'discord'
-      | 'whatsapp'
-    > = [
-      'feishu',
-      'telegram',
-      'qq',
-      'wechat',
-      'dingtalk',
-      'discord',
-      'whatsapp',
-    ];
+    // ADR-0009：渠道清单从注册表派生（原为手写七值联合 + 字面量数组，顺序=注册表序）
+    const channels: readonly ChannelId[] = CHANNEL_IDS;
     await Promise.allSettled(
       channels.map((channel) => reloadUserIMConfig(userId, channel)),
     );
@@ -21084,6 +21059,35 @@ async function main(): Promise<void> {
       };
     },
     assistantName: ASSISTANT_NAME,
+    // 批二 B5（票 #25）：渠道适配器解析从 B4 的恒 null 接为真解析——admin 用户
+    // （ADR-0008：推送目标 MVP 仅 admin 私聊，沿 reloadFeishuConnection 的
+    // listUsers 取 admin 先例）→ imManager.getConnectedChannel（只读公开面，
+    // 内部复用 isOutboundConnectionAllowed 出站门控）→ bindImChannelAdapter
+    // 折算发送端口。默认行为安全：渠道未连接/账号停用/admin 不存在 → resolver
+    // 返回 null；目标未配置（proactive-message.json channels.<id>.defaultTarget
+    // 缺省）→ 决策在目标解析处即跳过——两路都是可观察的 skipped（投递审计 +
+    // 结构化日志），不产生意外发送。
+    notifyTaskResult: createSchedulerProactiveNotifier({
+      configPath: path.join(DATA_DIR, 'config', 'proactive-message.json'),
+      rateControlDbPath: path.join(DATA_DIR, 'db', 'proactive-message.db'),
+      deliveriesDbPath: path.join(
+        DATA_DIR,
+        'db',
+        'proactive-message-deliveries.db',
+      ),
+      resolveAdapter: bindImChannelAdapter((channelId) => {
+        const adminId = listUsers({
+          status: 'active',
+          role: 'admin',
+          page: 1,
+          pageSize: 1,
+        }).users[0]?.id;
+        // admin 不存在/未激活 → undefined（= adapter-unavailable 跳过，不发送）
+        return adminId
+          ? imManager.getConnectedChannel(adminId, channelId)
+          : undefined;
+      }),
+    }),
   };
   startSchedulerLoop(schedulerDeps);
 

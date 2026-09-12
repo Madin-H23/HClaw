@@ -2,19 +2,13 @@
 
 import { z } from 'zod';
 import { AGENT_EFFORT_LEVELS } from './agent-effort.js';
+import { CHANNEL_IDS } from './channel-registry.js';
 import { ALL_PERMISSIONS } from './permissions.js';
 import type { Permission } from './types.js';
 import { MAX_GROUP_NAME_LEN } from './web-context.js';
 
-export const ChannelProviderSchema = z.enum([
-  'feishu',
-  'telegram',
-  'qq',
-  'wechat',
-  'dingtalk',
-  'discord',
-  'whatsapp',
-]);
+// ADR-0009：渠道枚举从注册表派生（原为手写七值 z.enum）
+export const ChannelProviderSchema = z.enum(CHANNEL_IDS);
 
 const ChannelCredentialsSchema = z
   .record(z.string(), z.string().max(8192))
@@ -90,17 +84,8 @@ export const TaskPatchSchema = z.object({
     .refine((v) => !isNaN(Date.parse(v)), 'next_run must be ISO 8601')
     .optional(),
   notify_channels: z
-    .array(
-      z.enum([
-        'feishu',
-        'telegram',
-        'qq',
-        'wechat',
-        'dingtalk',
-        'discord',
-        'whatsapp',
-      ]),
-    )
+    // ADR-0009：渠道枚举复用注册表派生的 ChannelProviderSchema
+    .array(ChannelProviderSchema)
     .nullable()
     .optional(),
 });
@@ -144,17 +129,8 @@ export const TaskCreateSchema = z
     execution_mode: z.enum(['host', 'container']).optional(),
     script_command: z.string().max(MAX_TASK_SCRIPT_COMMAND_LENGTH).optional(),
     notify_channels: z
-      .array(
-        z.enum([
-          'feishu',
-          'telegram',
-          'qq',
-          'wechat',
-          'dingtalk',
-          'discord',
-          'whatsapp',
-        ]),
-      )
+      // ADR-0009：渠道枚举复用注册表派生的 ChannelProviderSchema
+      .array(ChannelProviderSchema)
       .nullable()
       .optional(),
   })

@@ -1,3 +1,4 @@
+import type { ChannelId } from './channel-registry.js';
 import type { StreamEvent, WorkflowRunSnapshot } from './stream-event.types.js';
 
 export interface AdditionalMount {
@@ -211,14 +212,10 @@ export interface RegisteredGroup {
   feishu_group_message_type?: string; // 飞书群消息形式：chat/thread
 }
 
-export type ChannelProvider =
-  | 'feishu'
-  | 'telegram'
-  | 'qq'
-  | 'wechat'
-  | 'dingtalk'
-  | 'discord'
-  | 'whatsapp';
+/**
+ * 渠道 id 联合（ADR-0009）：从渠道注册表派生，勿手写第二份。
+ */
+export type ChannelProvider = ChannelId;
 
 export type ChannelAuthMode = 'credentials' | 'bot_token' | 'qr_session';
 export type ChannelAuthStatus =
