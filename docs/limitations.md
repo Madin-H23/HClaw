@@ -198,6 +198,7 @@ T1 按 ADR-0005 完成**产品身份面**替换：electron 壳（窗口标题 / 
   `normalizeDeclaredChannels` 跳过它们，旧路径保持唯一投递者）；③未声明渠道
   与绑定渠道（`delivery_route_jid`）投递、任务会话消息（groupJid 转写）零
   变化；④绑定渠道失败重投走 `deliveryRouteJid` 不经声明清单，不受让位影响。
+- **残余风险（方案②已知边界）**：让位后声明渠道的错误通知完全归主动消息路径，其补发依赖「下次触发」——`schedule_type=once` 已终局任务若完成点落在静默窗口（hold），声明渠道在可预见期内收不到该次错误通知（让位前旧 fan-out 为必达）。后续票可评估 once 任务跳过静默持有。
 
 ### 薄迁移（Ydisks/relay）边界
 
