@@ -35,7 +35,17 @@ function killScriptProcessTree(child: ChildProcess): void {
   const pid = child.pid;
   if (!pid) return;
   if (process.platform === 'win32') {
-    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], () => undefined);
+    // A failed tree-kill leaves the script running while the runner already
+    // reports it aborted — operators must be able to see why. Failure stays
+    // non-fatal: the close handler settles the run either way.
+    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], (error) => {
+      if (error) {
+        logger.warn(
+          { pid, err: error },
+          'taskkill failed to terminate script process tree',
+        );
+      }
+    });
     return;
   }
   try {
