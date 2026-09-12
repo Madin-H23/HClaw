@@ -150,7 +150,8 @@ async function buildRig(baseUrl: string) {
   for (const id of Object.keys(MAPPING)) {
     await withFsRetry(() =>
       credentials.save(id, {
-        quotaToolProvider: MAPPING[id as keyof typeof MAPPING].quotaToolProvider,
+        quotaToolProvider:
+          MAPPING[id as keyof typeof MAPPING].quotaToolProvider,
         credentials: { token: 'cred-for-' + id },
       }),
     );
