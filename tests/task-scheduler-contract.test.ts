@@ -2228,7 +2228,11 @@ describe('scheduled task workspace/session contract', () => {
       options: {
         skipStore: true,
         sourceAlreadyDelivered: false,
-        notifyChannels: ['feishu'],
+        // 双投收敛方案②（票 #26）：完成点传给 storeResultAndNotify 的
+        // notifyChannels 已经 legacyFanOutChannelsAfterYield 收窄（声明渠道
+        // 让位主动消息路径），重试 payload 的 fan-out 允许清单随之继承收窄
+        // 结果——让位渠道的重投责任归主动消息补发语义，不再出现在此清单。
+        notifyChannels: [],
       },
     });
 

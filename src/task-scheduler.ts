@@ -113,7 +113,10 @@ import type {
   ProactiveTriggerDeliverySummary,
   SchedulerProactiveTriggerInput,
 } from './proactive-message/trigger-dispatch.js';
-import { isFailedDeliveryOutcome } from './proactive-message/trigger-dispatch.js';
+import {
+  isFailedDeliveryOutcome,
+  legacyFanOutChannelsAfterYield,
+} from './proactive-message/trigger-dispatch.js';
 
 export function shouldFinalizeScheduledRunOutput(
   output: Pick<
@@ -847,8 +850,8 @@ function appendProactiveDeliveryFailureTrace(
  * 共用）。承接 B3 审查移交②：每次触发包一层兜底 catch + 结构化日志——注入
  * 闭包与分发器承诺不 reject，此 catch 是最终防线，任何意外都不得逃进调度
  * 收尾路径（更不得炸调度循环）。未装配 dep（undefined）或任务未声明渠道或
- * 无可投内容 → no-op（与上游行为一致）。与旧投递路径并存，双投收敛策略
- * 悬置 B5（proactive-message/trigger-dispatch.ts 文件头）。
+ * 无可投内容 → no-op（与上游行为一致）。与旧投递路径的双投已按方案②收敛
+ * （票 #26，见 proactive-message/trigger-dispatch.ts 文件头）。
  */
 async function notifyTaskResultProactive(
   taskId: string,
@@ -1543,7 +1546,9 @@ async function runTaskInner(
           // SDK final in the web task session for audit, but do not broadcast
           // it a second time.  Failures still need the scheduler fallback.
           ownerId: error ? taskOwnerId || undefined : undefined,
-          notifyChannels: task.notify_channels,
+          // 双投收敛方案②（票 #26）：声明渠道（注册表内）归下方主动消息投递
+          // 独占，旧 fan-out 在这些渠道上让位；注册表外 id 与未声明原样透传。
+          notifyChannels: legacyFanOutChannelsAfterYield(task.notify_channels),
           deliveryRouteJid: task.delivery_route_jid ?? task.chat_jid,
           sourceKind: 'sdk_final',
           // Use source workspace folder for IM routing; task sessions are virtual
@@ -1596,8 +1601,9 @@ async function runTaskInner(
   // proactive-message/trigger-dispatch.ts）；补发语义 = 本完成点每次触发照常
   // 调用（hold 由下次触发自然重投，此处不建重试/跳过逻辑）。送达失败痕迹经
   // appendProactiveDeliveryFailureTrace 留在任务运行日志。与上方旧投递路径
-  // （storeResultAndNotify）并存，双投收敛策略悬置 B5（见
-  // trigger-dispatch.ts 文件头「与上游旧投递路径的关系」）。
+  // （storeResultAndNotify）的双投已按方案②收敛（票 #26，维护者终裁）：
+  // 旧 fan-out 在声明渠道上让位（上方传参已经
+  // legacyFanOutChannelsAfterYield 收窄），声明渠道只收本入口一份。
   if (
     task.notify_channels &&
     task.notify_channels.length > 0 &&
@@ -1901,7 +1907,12 @@ async function runScriptTaskInner(
           try {
             await deps.storeResultAndNotify(groupJid, fullText, {
               ownerId,
-              notifyChannels: task.notify_channels,
+              // 双投收敛方案②（票 #26）：声明渠道（注册表内）归下方主动消息
+              // 投递独占，旧 fan-out 在这些渠道上让位（脚本任务成功场景即
+              // 原常态双投面）；注册表外 id 与未声明原样透传。
+              notifyChannels: legacyFanOutChannelsAfterYield(
+                task.notify_channels,
+              ),
               skipStore: true,
               workspaceFolder: task.group_folder,
             });
@@ -1945,8 +1956,9 @@ async function runScriptTaskInner(
 
   // 批二 B4（票 #24）：主动消息投递（内容已在 try 内备好；durationMs 已定格，
   // 投递时延不计入运行时长）。补发语义 = 本次照常调用，hold 靠下次触发自然
-  // 重投；兜底 catch 由 notifyTaskResultProactive 承接。与旧投递路径并存，
-  // 双投收敛策略悬置 B5（trigger-dispatch.ts 文件头）。
+  // 重投；兜底 catch 由 notifyTaskResultProactive 承接。与旧投递路径的双投已
+  // 按方案②收敛（票 #26）：旧 fan-out 在声明渠道上让位（上方传参已经
+  // legacyFanOutChannelsAfterYield 收窄），声明渠道只收主动消息一份。
   if (proactiveContent) {
     proactiveDeliverySummary = await notifyTaskResultProactive(task.id, deps, {
       runId: null,

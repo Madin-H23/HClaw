@@ -37,15 +37,22 @@
  * 重试、不排队、不记忆；触发源（调度器）按原节奏下次触发时重新走完整决策
  * 自然补发。测试以「静默窗口内 hold → 窗口外再触发 sent」端到端钉死。
  *
- * 与上游旧投递路径的关系（双投现状，收敛策略显式悬置 B5 拍板）：任务完成
- * 点除本入口外还保留上游投递面（storeResultAndNotify → sendImWithRetry：
- * agent 任务错误通知、脚本任务完成通知，投往任务绑定与 fan-out 渠道）。
- * 两路对同一渠道的重复投递**不能靠冷却去重吸收**——本入口内容带任务头前缀，
- * SHA-256 摘要与旧路径原文必异（冷却键含摘要）；且旧路径不写频控库，跨路径
- * 无账可查。触发面：脚本任务成功场景即**常态双投**（完成点成败两路都走），
- * agent 任务仅错误场景重叠（成功只有本入口）。收敛二选一——①内容对齐：
- * 两路共用一份成形文本；②旧路径让位：任务已声明 notify_channels 的渠道上
- * 旧投递跳过——须结合真机联调定，本票不做任何一侧的静默改动（B5 决策项）。
+ * 与上游旧投递路径的关系（双投收敛，方案②已落地——票 #26，维护者终裁）：
+ * 任务完成点的上游投递面（storeResultAndNotify → sendImWithRetry：agent 任务
+ * 错误通知、脚本任务完成通知，投往任务绑定与 fan-out 渠道）在 notify_channels
+ * **声明渠道上让位**——调度器两完成点把传给 storeResultAndNotify 的
+ * notifyChannels 经 legacyFanOutChannelsAfterYield 收窄（声明中的注册表内渠道
+ * 剔除，归本入口独占投递），旧 fan-out 对这些渠道不再产生发送，同轮双投消除。
+ * 让位前核实过错误要素：本入口 content 在 error 场景已含错误详情（agent 完成点
+ * taskSessionText = `执行出错: <error>`、脚本完成点 fullText =
+ * `[脚本] 执行失败: <error>…`，均带任务头前缀进入 content），让位不丢错误感知
+ * （集成测钉死）。注册表外声明 id **不让位**（normalizeDeclaredChannels 会跳过
+ * 它们，本入口不投）——旧路径保持唯一投递者。绑定渠道（delivery_route_jid）
+ * 投递、任务会话消息（groupJid 转写）不在让位范围，未声明渠道行为零变化。
+ * 历史（悬置期结论，保留备查）：两路对同一渠道的重复投递不能靠冷却去重吸收
+ * ——本入口内容带任务头前缀，SHA-256 摘要与旧路径原文必异（冷却键含摘要）；
+ * 且旧路径不写频控库，跨路径无账可查——这正是选择让位（方案②）而非内容
+ * 对齐（方案①）的实证依据。
  *
  * 生产工厂 createSchedulerProactiveNotifier：供 src/index.ts schedulerDeps
  * 注入级接线（构造不抛错——频控库/审计库构造失败分别降级 fail-open /
@@ -294,6 +301,35 @@ export function normalizeDeclaredChannels(
     }
   }
   return channels;
+}
+
+/**
+ * 双投收敛方案②（票 #26）让位收窄：任务声明的 notify_channels 中，注册表内
+ * 渠道已归主动消息路径独占投递（本文件 deliverProactiveTrigger 一侧），旧投递
+ * 面的 fan-out（storeResultAndNotify → broadcastToOwnerIMChannels →
+ * sendImWithRetry）在这些渠道上让位。调度器两完成点把传给 storeResultAndNotify
+ * 的 notifyChannels 经本函数收窄——声明渠道从旧 fan-out 的允许清单中剔除即
+ * 零发送（fan-out 只投清单内渠道类型，契约由 task-routing 既有测试钉死），
+ * storeResultAndNotify 与 broadcastToOwnerIMChannels 的既有语义零改动；绑定
+ * 渠道（deliveryRouteJid）投递不经此清单，不受让位影响。
+ *
+ * 边界（红线）：
+ *   - 注册表外声明 id **不让位**（保留在返回清单中）——本入口的
+ *     normalizeDeclaredChannels 不投它们，旧路径是唯一投递者，让位会丢错误
+ *     感知；
+ *   - null / 空清单原样透传（null 折 null）——未声明渠道的任务完成点传参
+ *     与上游逐字节一致（零变化由测试钉死）。
+ */
+export function legacyFanOutChannelsAfterYield(
+  notifyChannels: readonly string[] | null | undefined,
+): string[] | null {
+  if (!notifyChannels || notifyChannels.length === 0) {
+    return notifyChannels ? [...notifyChannels] : null;
+  }
+  const proactiveOwned = new Set<string>(
+    normalizeDeclaredChannels(notifyChannels),
+  );
+  return notifyChannels.filter((channel) => !proactiveOwned.has(channel));
 }
 
 // ─── 调度器注入闭包（SchedulerDependencies.notifyTaskResult 形状） ──
