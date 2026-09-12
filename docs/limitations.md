@@ -106,6 +106,49 @@ T1 按 ADR-0005 完成**产品身份面**替换：electron 壳（窗口标题 / 
 - **CI runner**：`hclaw-ci.yml` 选 ubuntu-24.04（与上游 ci.yml 同平台，全量单测在该平台全绿）。Windows runner 接入待 #10–#15 簇清零，届时需验证 better-sqlite3 在 runner 上可编译（本地 Windows 已实测 `npm ci` 成功、better-sqlite3 可用）。CI 单测步骤**显式豁免** `tests/frontend-product-terminology.test.ts`——其 README 内容契约断言与品牌浅改冲突，已立票 #16 待裁决（豁免在 workflow 注释声明，裁决落地后移除）；本地/CI 基线对比口径仍以本节 57 例清单为准（该文件在 Windows 基线属簇七）。
 - **quota-router 注入默认 no-op**：生产装配路径暂无 `setQuotaRoutingPolicy` 调用方，缝上默认挂 no-op 策略——这是 T1 的预期形态（额度感知未生效、行为零变化），后续票接装配。
 
+## Windows 内嵌打包（T8 实测）
+
+> 日期 2026-09-12；形态=ADR-0007 全量内嵌（未触发重编降级）。包=NSIS x64，`npm run desktop:package:win` 出 `electron/release/HClaw Setup <ver>.exe`。
+
+### 内嵌形态（工程事实）
+
+- **技术路径**：electron main 进程动态 `import()` 后端 tsc 编译产物 `dist/index.js`（与 `npm start` 同一运行时形态；上游 `main()` 模块尾部自启，import 即装配）。三选一论证：esbuild 二次 bundle 巨石 + IM SDK 群转换风险高；子进程 spawn 需随包 Node 运行时；直接 import 编译产物改动最小、上游语义零变换。`src/` 零 diff，端口经上游既有 `WEB_PORT` env 注入。
+- **cwd 杠杆**：上游 `config.ts` 以 `process.cwd()` 锚定 `DATA_DIR`、`web.ts` 以 `./web/dist` 服务静态前端。内嵌启动先 `chdir` 到可写根 `%APPDATA%/HClaw/server`（userData 下），数据面与静态面同锚。
+- **产物物化**：web 前端（extraResources `web-dist` → `userData/server/web/dist`，按包版本戳幂等）；宿主 agent 依赖（`container/agent-runner` extraResources → junction `userData/server/container/agent-runner`，junction 失败退拷贝、再失败放行——preflight 给结构化 setup 错误不阻塞其他面）。
+- **better-sqlite3 重编（未降级）**：`desktop:rebuild:electron` 用 prebuild-install 取官方 electron-v140 预编译（electron 39 / ABI 140 实测 SQLITE_OK）；打包后 `desktop:rebuild:node` 自动恢复 Node ABI（顺序错误会让本机 vitest 全挂）。node-pty 为 NAPI 预编译，无需按 ABI 重编。electron-builder 内置 npm rebuild 关闭（`npmRebuild: false`）：其捆绑 node-gyp 在本机 VS2022 探测失败（"Could not find any Visual Studio installation to use"），且对 NAPI 模块本就多余。
+- **打包根**：由上游 `electron/` 改为仓库根（files/extraMetadata.main 等路径加 `electron/` 前缀），生产 node_modules 由 electron-builder 按 root package.json 自动收集，`dist/**`、`node_modules/**`、`src/pty-worker.cjs` 整体 asarUnpack 落真实文件系统（ESM import 与 native require 不经过 asar 虚拟路径）。壳契约测试 `tests/electron-shell-contract.test.ts` 图标断言已随打包根同步（注明依据）。
+
+### 已知局限（内嵌打包）
+
+- **agent 执行轮需要系统 Node.js**：宿主回合 preflight 通过后由上游 node-resolver 解析 node 二进制 spawn `container/agent-runner/dist/pi-index.js`（上游语义，`src/` 零 diff 约束）。未装 Node.js 的机器：发消息会收到结构化 setup 错误气泡（数据面/额度面板/卡片/IM 配置面不受影响），终端 PTY 回退 pipe 模式。
+- **安装目录名沿包名 `miniclaw`**：`%LOCALAPPDATA%\Programs\miniclaw\HClaw.exe`——目录名来自 package.json `name`（上游代码标识符，ADR-0005 保留）；产品可见面（快捷方式 `HClaw.lnk`、exe 名、DisplayName「HClaw 1.0.0」、appId）均为 HClaw。
+- **卸载不删用户数据**：`deleteAppDataOnUninstall: false`（显式落字），`%APPDATA%/HClaw`（含内嵌 server 的 SQLite/会话/额度快照）随卸载保留；junction 断链残留于其中，重装自愈。
+- **静默卸载有部分残留（本机 3/3 复现，未清根因）**：`"Uninstall HClaw.exe" /S` 三次实测同形残留——①安装目录部分文件未删（固定清单：`resources.pak`、`snapshot_blob.bin`、`v8_context_snapshot.bin`、`version`、`vk_swiftshader*.dll`、`vulkan-1.dll`、`resources/` 残目录、卸载器本体；HClaw.exe 与其余大文件正常删除）②开始菜单/桌面 `HClaw.lnk` 未删 ③注册表卸载项未删；退出码均为 0（静默模式吞掉失败，无用户可见报错）。疑因：AV/索引器对刚重装文件的短暂句柄 + NSIS 卸载器静默跳过/中止后不回滚快捷方式与注册表段；两次连跑卸载器不推进（疑似首跑后清单态丢失）。**干净机器（无 AV 干扰、应用完全退出）复核待做**；临时清理路径=手删残目录+快捷方式+`reg delete` 卸载项。
+- **代理会话内打包的文件锁竞态（环境固有，非包质量）**：本机打包实测 4 次 EBUSY——①旧 `better_sqlite3.node`（重试过）②/③ NSIS 写完临时卸载器、signtool 回写后 makensis 立即回读被拒（内外输出目录皆复现，事后探测无残留占者=瞬时扫描窗口；间隔重试可过，本票成功一轮曾穿过该点）④旧输出目录 `app.asar`/`default_app.asar` 长期锁死清不掉（Restart Manager 指认占用者=ZCode 代理主进程，代理 harness 对工作区新文件的句柄；换仓库外输出目录绕过）。CI 与正常终端环境无此干扰；`directories.output` 保持上游口径 `electron/release` 不变，本票最终包落仓库外一次性目录后校验。
+- **server stdout 打包态不可见**：pino 日志走 stdout；内嵌引导事件（物化/端口/就绪/退出码）落 `%APPDATA%/HClaw/server/embedded-server.log`（1MB 轮转）。
+- **内嵌启动失败回退的覆盖范围**：装配期失败（入口缺失 / import 同步抛 / 装配期 `process.exit` / 监听超时）→ 弹 `dialog.showErrorBox` 并回退缺省地址 `127.0.0.1:3000`——即 ADR-0007 预案的「手动起 server + 壳连 localhost」形态。装配期对上游 `process.exit` 做临时接管（转记退出码 + 抛可捕错误，监听就绪即还原；`main().catch` 回调内的调用点会逃逸成 unhandledRejection 警告，进程不退，由引导按退出码判定失败）。**覆盖边界**：装配完成（监听就绪）后的 server 运行期 exit 路径不接管，会照上游原语义直接杀壳——已知局限。显式 `MINICLAW_SERVER_URL` / `--server-url` 时完全不内嵌（远程模式语义原样）。
+- **端口分配 TOCTOU（已知窗口）**：空闲端口由 `listen(0)` 探测后立即释放，到上游 `startWebServer` 真正 bind 之间有时间窗，极小概率被其他进程抢占——后果为装配失败走弹窗回退，可重试；上游缺省 3000 固定端口同样存在该性质，不另设重试。
+- **web 前端物化按版本戳幂等（已知边界）**：同版本号重装/重打包不重物化 `web/dist`（戳=包版本）——同版本内前端内容变化时需手动清 `%APPDATA%/HClaw/server/web/dist`（或删 `.web-dist-version` 戳）触发重物化；正式发版升版本号场景不受影响。
+- **macOS/linux 段**：electron-builder.yml 保留上游语义（仅路径随打包根加前缀），本票只在 Windows 实测；mac dmg/zip 与 linux AppImage 未验。
+- **CI 打包 job**：`hclaw-ci.yml` 增 `package-windows`（windows-latest，artifact `HClaw-windows-x64-setup`）；runner 上 prebuild 下载与 NSIS 工具下载均走 GitHub 直连，未用镜像。
+
+### 打包/装后人工验收清单（无真实模型可全绿）
+
+1. **装**：`HClaw Setup 1.0.0.exe /S` 静默安装 → `%LOCALAPPDATA%\Programs\miniclaw\` 出现、开始菜单 `HClaw.lnk`、注册表 `HKCU\...\Uninstall` DisplayName=HClaw。
+2. **启**：启动「HClaw」→ 窗口出现初始化向导（非「Backend 未连接」错误页）；`%APPDATA%/HClaw/server/embedded-server.log` 有「内嵌 server 就绪：http://127.0.0.1:<port>」。
+3. **登录**：向导建管理员 → 进入工作台；清 cookie 重进应见登录页并可登录。
+4. **额度面板**（mock 态构造）：设两个 SMOKE 供应商（假 baseUrl 即可）→ `%APPDATA%/HClaw/server/data/config/` 写 `quota-router.json`（映射 → fake quota-tool baseUrl）与 `quota-router-credentials.json`（用仓库 `dist/runtime-config.js` 的 `encryptChannelSecret` 加密，密钥=同目录 `claude-provider.key`）→ 起一个 fake quota-tool（POST /api/query 回 `{ok:true,updatedAt,summary,windows,details}`，windows 项七字段契约见 `src/quota-router/tiers.ts`）→ 侧栏「额度」应出两卡：充足绿档/耗尽红档 + 原始信号 + 数据时间（面板读取即触发懒刷新，首读空、~2s 后刷新）。
+5. **降档/否决卡片**：把「耗尽」档供应商 `PUT /api/config/claude/default` 设为默认 → 会话发一条消息 → 池内有可用目标时出【额度降档】卡（重指到充足档）；禁用唯一充足档后再发，出【额度否决】卡（本轮 runner 不启动）。会话流内直接可读（turn-cards 徽标文本）。
+6. **卸载**：`"Uninstall HClaw.exe" /S` 后**逐项核对并记录事实**（本机实测为部分残留，见「已知局限」卸载条目，不以「消失」为预期断言）：安装目录是否清空、`HClaw.lnk`（开始菜单/桌面）是否消失、注册表卸载项是否消失、`%APPDATA%/HClaw` 保留（上一条）。发现残留：记录清单 → 手动清理（删残目录/快捷方式 + `reg delete` 卸载项）→ 复核。
+7. **图标成品核对**：右键 `%LOCALAPPDATA%\Programs\miniclaw\HClaw.exe` → 属性 → 详细信息/图标，核对 exe 图标为 HClaw 炉心图（非 Electron 默认原子图）；同法核对安装器 `HClaw Setup <ver>.exe` 图标（NSIS 由 `win.icon` 生成的 ico 成品）。
+
 ## 真模型手动冒烟清单
 
-（待后续接入真实模型/真实额度数据的票填充；T1 无可列项。）
+（真实供应商/真实额度数据接入手动项；T8 起与「打包/装后人工验收清单」配套——先跑打包清单全绿，再按下列项验真模型链路。）
+
+- [ ] 真实供应商凭证接入（官方/第三方任一）：设置→模型配置建供应商，健康检查转绿
+- [ ] 真实 quota-tool 端点接入：`quota-router.json.quotaTool.baseUrl` 指向真实工具，面板档位与工具侧数据一致（非 fake 载荷）
+- [ ] 真实回合：会话发任务 → 选中供应商按额度真实决策（充足直选/紧张/临界按阈值）、流式卡片正常收尾
+- [ ] 真实降档：耗尽默认供应商 + 真实池 → 降档卡 + 任务落到降档目标且回合成功
+- [ ] 真实否决：唯一供应商耗尽 → 否决卡 + 无 runner 启动；`adminOverride:true` 时放行卡 + 告警
+- [ ] IM 渠道回合（Feishu/Telegram 任一）：额度事件卡不在 IM 侧刷屏（T7 边界：纯 IM 群不发卡）

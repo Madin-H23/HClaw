@@ -10,6 +10,8 @@ import {
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { startEmbeddedServer } from './embedded-server.js';
+
 const APP_NAME = 'HClaw';
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:3000';
 const WINDOW_DEFAULTS = {
@@ -80,7 +82,22 @@ function resolveDesktopUrls(): { serverUrl: string; rendererUrl: string } {
   return { serverUrl, rendererUrl };
 }
 
-const { serverUrl, rendererUrl } = resolveDesktopUrls();
+// T8（ADR-0007）：缺省内嵌——main 进程启动完整 server 后壳连本机内嵌实例；
+// 显式 --server-url / MINICLAW_SERVER_URL 时为远程模式，本进程不内嵌，URL 解析
+// 语义原样。内嵌模式下显式 --renderer-url / MINICLAW_RENDERER_URL 仍然生效。
+const EMBED_SERVER_ENABLED =
+  !getCliValue('--server-url') && !process.env.MINICLAW_SERVER_URL;
+const EXPLICIT_RENDERER_URL =
+  getCliValue('--renderer-url') || process.env.MINICLAW_RENDERER_URL;
+
+// 远程模式：立即按原逻辑解析；内嵌模式：先占位缺省地址，server 就绪后由
+// bootstrap 回填（启动失败保持缺省——退化为「手动起 server + 壳连 localhost」
+// 的 ADR-0007 降级形态，弹窗提示）。
+const initialUrls = EMBED_SERVER_ENABLED
+  ? { serverUrl: DEFAULT_SERVER_URL, rendererUrl: DEFAULT_SERVER_URL }
+  : resolveDesktopUrls();
+let serverUrl = initialUrls.serverUrl;
+let rendererUrl = initialUrls.rendererUrl;
 
 function getDesktopConfig(): DesktopConfig {
   return {
@@ -332,7 +349,26 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus();
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    if (EMBED_SERVER_ENABLED) {
+      try {
+        const baseUrl = await startEmbeddedServer((message) =>
+          console.log(`[desktop:embed] ${message}`),
+        );
+        serverUrl = normalizeHttpUrl(baseUrl, 'HClaw embedded server URL');
+        rendererUrl = EXPLICIT_RENDERER_URL
+          ? normalizeHttpUrl(EXPLICIT_RENDERER_URL, 'HClaw renderer URL')
+          : serverUrl;
+      } catch (error) {
+        console.warn('[desktop] embedded server failed to start', error);
+        dialog.showErrorBox(
+          'HClaw 内嵌服务启动失败',
+          `已回退到缺省地址 ${DEFAULT_SERVER_URL}；可手动启动 HClaw Backend 后重试。\n\n${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
     registerIpcHandlers();
     createApplicationMenu();
     createMainWindow();
