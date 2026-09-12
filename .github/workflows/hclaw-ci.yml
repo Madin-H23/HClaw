@@ -1,6 +1,7 @@
 # HClaw 独立 CI（T1）：typecheck + vitest 单测。上游 ci.yml 保持零改动。
-# 说明：runner 选 ubuntu-24.04（与上游一致，全量单测在该平台全绿）；
-# Windows runner 接入待上游 Windows 固有失败簇清零（见 docs/limitations.md 基线节）。
+# 说明：verify 在 ubuntu-24.04（与上游一致）；test-windows 在 windows-latest
+# 跑同一单测（#10-#15 适配批后基线 57→1，#16 豁免覆盖双平台）——产品目标平台
+# 的回归面自此进 CI；打包见 package-windows（T8）。
 name: HClaw CI
 
 on:
@@ -54,6 +55,33 @@ jobs:
       # 豁免 tests/frontend-product-terminology.test.ts：其 README 断言与品牌浅改
       # 的内容契约冲突已立票 #16（needs-triage），裁决后移除此豁免。
       - name: Unit tests
+        run: npm test -- --run --exclude 'tests/frontend-product-terminology.test.ts'
+
+  test-windows:
+    # #10-#15 适配批后 Windows 基线=仅 #16（豁免），产品目标平台的单测回归面进 CI。
+    # 不跑 typecheck/format（平台中立，verify 已覆盖）；不跑 E2E（桌面面归打包冒烟）。
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+            container/agent-runner/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix web ci
+          npm --prefix container/agent-runner ci
+
+      # 豁免同 verify：#16 内容契约冲突（needs-triage），裁决后移除。
+      - name: Unit tests (Windows)
         run: npm test -- --run --exclude 'tests/frontend-product-terminology.test.ts'
 
   package-windows:
