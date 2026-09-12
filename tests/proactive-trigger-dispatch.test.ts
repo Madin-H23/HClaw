@@ -17,6 +17,7 @@ import {
   DEFAULT_SEND_TIMEOUT_MS,
   deliverProactiveTrigger,
   createSchedulerProactiveNotifier,
+  legacyFanOutChannelsAfterYield,
   normalizeDeclaredChannels,
   type ProactiveTriggerRequest,
 } from '../src/proactive-message/trigger-dispatch.js';
@@ -558,6 +559,32 @@ describe('normalizeDeclaredChannels', () => {
     expect(normalizeDeclaredChannels(null)).toEqual([]);
     expect(normalizeDeclaredChannels([])).toEqual([]);
     expect(normalizeDeclaredChannels(undefined)).toEqual([]);
+  });
+});
+
+describe('legacyFanOutChannelsAfterYield（双投收敛方案②，票 #26）', () => {
+  test('注册表内声明渠道全让位：收窄后旧 fan-out 允许清单为空', () => {
+    expect(legacyFanOutChannelsAfterYield(['feishu', 'wechat'])).toEqual([]);
+    expect(legacyFanOutChannelsAfterYield(['feishu'])).toEqual([]);
+  });
+
+  test('注册表外声明 id 不让位：主动消息路径不投它们，旧路径保持唯一投递者', () => {
+    expect(
+      legacyFanOutChannelsAfterYield(['feishu', 'sms-legacy', 'beep-x']),
+    ).toEqual(['sms-legacy', 'beep-x']);
+  });
+
+  test('重复声明不影响让位判定；剩余清单保序', () => {
+    expect(legacyFanOutChannelsAfterYield(['feishu', 'feishu'])).toEqual([]);
+    expect(
+      legacyFanOutChannelsAfterYield(['zz-legacy', 'dingtalk', 'aa-legacy']),
+    ).toEqual(['zz-legacy', 'aa-legacy']);
+  });
+
+  test('null / 空清单原样透传（未声明渠道传参与上游逐字节一致）', () => {
+    expect(legacyFanOutChannelsAfterYield(null)).toBeNull();
+    expect(legacyFanOutChannelsAfterYield(undefined)).toBeNull();
+    expect(legacyFanOutChannelsAfterYield([])).toEqual([]);
   });
 });
 
