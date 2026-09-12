@@ -110,7 +110,11 @@ export async function runScript(
           GROUP_FOLDER: groupFolder,
           HOME: process.env.HOME || cwd,
         },
-        shell: '/bin/sh',
+        // Windows: resolve to %ComSpec% (cmd.exe). The hardcoded /bin/sh does
+        // not exist on Windows, which made every host script fail with spawn
+        // ENOENT and left the taskkill tree-kill branch below dead code.
+        // POSIX keeps /bin/sh (Windows adaptation #15).
+        shell: process.platform === 'win32' ? true : '/bin/sh',
         detached: process.platform !== 'win32',
       });
       const timeout = setTimeout(() => {

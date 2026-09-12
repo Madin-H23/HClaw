@@ -25,7 +25,12 @@ describe('script run cancellation', () => {
     const { runScript } = await import('../src/script-runner.js');
     const controller = new AbortController();
     const startedAt = Date.now();
-    const pending = runScript('sleep 10', 'workspace', {
+    // Windows 适配（#15）：POSIX 的 sleep 在 Windows 不存在，用系统自带的
+    // ping -n 10（≈9s）等价构造"会被 abort 打断的长任务"；断言不变
+    // （aborted:true / exitCode:null——abort 强杀不得映射为成功退出码）。
+    const longRunningCommand =
+      process.platform === 'win32' ? 'ping -n 10 127.0.0.1' : 'sleep 10';
+    const pending = runScript(longRunningCommand, 'workspace', {
       signal: controller.signal,
     });
     setTimeout(() => controller.abort('cancelled'), 30);
