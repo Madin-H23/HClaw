@@ -10,12 +10,14 @@
  * schema 示例（各字段含义见 ProactiveMessageConfig 注释）：
  * {
  *   "version": 1,
- *   "rateLimitPerMinute": 10,        // 全局默认：渠道全局限速（条/分钟）
+ *   "rateLimitPerMinute": 10,        // 全局默认：渠道全局限速（条/分钟）；
+ *                                    // ⚠ 0 判非法回落默认 10——没有 0=不限速
+ *                                    // 的语义（与 cooldownMs 的 0=关闭不对称）
  *   "cooldownMs": 3600000,           // 全局默认：冷却去重窗（毫秒；0 = 关闭）
  *   "timeZoneOffsetMinutes": 480,    // 静默窗口时区：固定 UTC 偏移（缺省 UTC+8）
  *   "channels": {
  *     "feishu": {
- *       "rateLimitPerMinute": 5,     // 渠道覆盖；缺省回落全局默认
+ *       "rateLimitPerMinute": 5,     // 渠道覆盖；非法（含 0）回落全局默认
  *       "cooldownMs": 1800000,       // 渠道覆盖；缺省回落全局默认
  *       "defaultTarget": "<该渠道默认私聊目标 id>"   // 缺省 null = 未配置
  *     }

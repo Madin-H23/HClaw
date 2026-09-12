@@ -104,6 +104,21 @@ describe('第一层：渠道全局限速（滑动窗口）', () => {
     expect(decision.kind).toBe('deliver');
   });
 
+  test('未来时间戳计入滑窗（时钟回拨保守处理：宁可多算不多发）', () => {
+    // sentAtMs > nowMs 的记录（时钟回拨产物）按注释承诺计入滑窗——
+    // 只设下界 sentAtMs > now - 60s，无上界
+    const decision = decideDelivery(
+      baseInput({
+        channelLimitPerMinute: 1,
+        state: {
+          recentSendTimesMs: [NOW_MS + 5_000],
+          recentSendsOfKey: [],
+        },
+      }),
+    );
+    expect(decision).toMatchObject({ kind: 'hold', holdKind: 'rate-limit' });
+  });
+
   test('限速不看目标：同渠道不同目标的发送合并计数（渠道全局语义）', () => {
     const decision = decideDelivery(
       baseInput({
@@ -378,6 +393,20 @@ describe('fail-open：频控状态不可用 → 送达（宁多勿丢，ADR-0008
       baseInput({ state: null, cooldownMs: 600_000 }),
     );
     expect(decision).toMatchObject({ kind: 'deliver', failOpen: true });
+  });
+
+  test('fail-open 最激进后果：state=null + 静默窗口已声明 → 仍绕过静默直发', () => {
+    // 20:00（UTC+8）在 19:00–21:00 窗口内：状态可用时必持有；状态不可用时
+    // fail-open 连最重的静默层也一并绕过——这是「宁多勿丢」方向的最激进落点
+    const decision = decideDelivery(
+      baseInput({ state: null, quietWindows: [window('19:00', '21:00')] }),
+    );
+    expect(decision).toMatchObject({ kind: 'deliver', failOpen: true });
+    // 对照钉死：同一输入只把状态接上 → 立刻被静默层持有
+    const withState = decideDelivery(
+      baseInput({ quietWindows: [window('19:00', '21:00')] }),
+    );
+    expect(withState).toMatchObject({ kind: 'hold', holdKind: 'quiet-window' });
   });
 
   test('方向辨析对照：这不是额度路由的 fail-open——额度路由故障不放行（ADR-0004），频控故障必放行（ADR-0008）', () => {

@@ -160,6 +160,10 @@ export class RateControlStateStore {
   /**
    * 清理 keepWindowMs 之前的旧行（滑动窗口/冷却窗之外的记录对频控已无意义）；
    * 由装配侧发送后顺带调用。失败仅告警不抛出（残留只多占空间，不影响语义）。
+   *
+   * 不变量：keepWindowMs 必须 ≥ max(全渠道最大 cooldownMs, RATE_WINDOW_MS=60s
+   * 滑窗)——本库只存事实不读配置，剪太狠会把冷却窗内/滑窗内的记录静默削掉，
+   * 冷却去重层与限速层随之失效（调用侧装配时由配置取 max，勿写死小值）。
    */
   prune(nowMs: number, keepWindowMs: number): void {
     try {
