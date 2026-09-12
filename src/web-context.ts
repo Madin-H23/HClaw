@@ -1,6 +1,7 @@
 // Shared state and utilities for web server
 
 import { WebSocket } from 'ws';
+import type { ChannelId } from './channel-registry.js';
 import { FollowUpActionResult, RegisteredGroup, UserRole } from './types.js';
 import {
   GroupQueue,
@@ -90,14 +91,8 @@ export interface WebDeps {
   }) => Promise<boolean>;
   reloadUserIMConfig?: (
     userId: string,
-    channel:
-      | 'feishu'
-      | 'telegram'
-      | 'qq'
-      | 'wechat'
-      | 'dingtalk'
-      | 'discord'
-      | 'whatsapp',
+    // ADR-0009：渠道 id 从注册表派生（原为手写七值联合）
+    channel: ChannelId,
   ) => Promise<boolean>;
   reloadChannelAccount?: (accountId: string) => Promise<boolean>;
   disconnectChannelAccount?: (accountId: string) => Promise<void>;

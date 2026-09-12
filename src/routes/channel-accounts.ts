@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import crypto from 'node:crypto';
+import { CHANNEL_LABELS } from '../channel-registry.js';
 import type { Variables } from '../web-context.js';
 import { authMiddleware } from '../middleware/auth.js';
 import type {
@@ -173,15 +174,8 @@ function cancelPendingOnboarding(account: ChannelAccount): void {
   updateChannelAccountStatus(account.id, 'disconnected');
 }
 
-const PROVIDER_NAMES: Record<ChannelProvider, string> = {
-  feishu: '飞书',
-  telegram: 'Telegram',
-  qq: 'QQ',
-  wechat: '微信',
-  dingtalk: '钉钉',
-  discord: 'Discord',
-  whatsapp: 'WhatsApp',
-};
+// ADR-0009：显示名从渠道注册表派生（原为手写七渠道 Record）
+const PROVIDER_NAMES: Record<ChannelProvider, string> = CHANNEL_LABELS;
 
 function publicAccount(account: ChannelAccount): ChannelAccountPublic {
   const {

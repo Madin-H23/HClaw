@@ -1,12 +1,7 @@
-export const CHANNEL_LABEL: Record<string, string> = {
-  feishu: '飞书',
-  telegram: 'Telegram',
-  qq: 'QQ',
-  wechat: '微信',
-  dingtalk: '钉钉',
-  discord: 'Discord',
-  whatsapp: 'WhatsApp',
-};
+import { CHANNEL_LABELS } from '../../channel-registry';
+
+// ADR-0009：显示名从渠道注册表派生（原为手写七渠道 Record）
+export const CHANNEL_LABEL: Record<string, string> = CHANNEL_LABELS;
 
 export const CHANNEL_COLORS: Record<string, string> = {
   feishu: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',

@@ -26,6 +26,14 @@ jobs:
           # format:check 需要 origin/develop 做分叉 diff（浅克隆取不到会退化为空跑）
           fetch-depth: 0
 
+      # 共享类型镜像守卫（#21）：stream-event / image-detector / channel-prefixes /
+      # channel-registry 四组 shared/ → src/、container/agent-runner/src/、web/src/
+      # 镜像副本与规范源逐字节一致；改 shared/ 忘跑 make sync-types 在此拦截。
+      # 放在安装依赖之前，漂移即快速失败。上游 ci.yml 的 make typecheck 先 sync
+      # 再 check 恒绿，无法兜底，故必须在本 job 显式把关。
+      - name: Check shared type mirror sync
+        run: bash scripts/check-stream-event-sync.sh
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
