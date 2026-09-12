@@ -1166,6 +1166,47 @@ export class IMConnectionManager {
   }
 
   /**
+   * Read-only access to a connected channel instance (batch 2 B5, #25; the
+   * production adapter-binding seam — design record in
+   * proactive-message/delivery-assembly.ts, "channel adapter instance seam").
+   * Method-level additive only: same gating semantics as
+   * findChannelForJid/isChannelAccountConnected (reuses
+   * isOutboundConnectionAllowed; a tracked socket alone is not authority to
+   * send), key built via the private channelKey() — callers never see or
+   * rebuild the internal key shape. With accountId omitted, the first
+   * connected+allowed channel of that type wins (Map insertion order, same
+   * enumeration semantics as getConnectedChannelAccountIds). Returns
+   * undefined — never throws — when the user is unknown/disabled, the account
+   * is disabled/foreign, or nothing of that type is connected.
+   */
+  getConnectedChannel(
+    userId: string,
+    channelType: string,
+    accountId?: string | null,
+  ): IMChannel | undefined {
+    if (!this.isOutboundConnectionAllowed(userId, channelType, accountId)) {
+      return undefined;
+    }
+    const conn = this.connections.get(userId);
+    if (!conn) return undefined;
+    if (accountId) {
+      const ch = conn.channels.get(this.channelKey(channelType, accountId));
+      return ch?.isConnected() ? ch : undefined;
+    }
+    for (const [key, ch] of conn.channels.entries()) {
+      const [type, keyAccountId] = key.split('\u0000');
+      if (
+        type === channelType &&
+        ch.isConnected() &&
+        this.isOutboundConnectionAllowed(userId, type, keyAccountId)
+      ) {
+        return ch;
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Check if a specific JID has a connected channel available.
    * Uses the same persisted owner/account routing as sendMessage.
    */
