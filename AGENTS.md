@@ -45,3 +45,4 @@ Single-context：repo 根 `CONTEXT.md`（纯词汇表，术语权威源）+ `doc
   - `no-promise-executor-return` — 抓 executor 意外 return 非空值：会提前 resolve，包装逻辑半途而废。
 - 豁免纪律：预期不 await 的 fire-and-forget 行必须显式标注——`void expr;`（类型面）或 `// eslint-disable-next-line <rule> -- 理由`；豁免是有意识的标注不是逃逸，陈旧豁免（规则已不再触发）会被 reportUnusedDisableDirectives + `--max-warnings=0` 挂闸。
 - 覆盖边界：类型感知规则只作用于真实 tsconfig project 内的文件（src/**、electron/src/**，projectService 就近挂靠既有 tsconfig）；tests/、scripts/ 的 TS 不在任何 tsconfig（vitest/tsc 转译即用），只吃非类型规则；web/、container/ 是独立 npm 包，不在根包门禁范围。
+- **闸门粒度=文件**：增量口径对「分叉的改动文件」**整文件**负责——触碰含存量违例的文件（存量清单与逐规则计数见 `docs/limitations.md` 规约层基线节）即须清偿该文件全量 problems（真实修复或行级豁免标注+理由，豁免纪律同上）；未触碰的存量文件不追。

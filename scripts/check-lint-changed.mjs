@@ -36,6 +36,10 @@ let base = process.env.LINT_BASE_REF?.trim();
 if (base && !git(['rev-parse', '--verify', `${base}^{commit}`], true)) {
   base = undefined;
 }
+// 本仓库纪律：一切改造在 develop——缺省回退链首选 origin/develop。
+if (!base && git(['rev-parse', '--verify', 'origin/develop^{commit}'], true)) {
+  base = 'origin/develop';
+}
 if (!base && git(['rev-parse', '--verify', 'origin/main^{commit}'], true)) {
   base = 'origin/main';
 }

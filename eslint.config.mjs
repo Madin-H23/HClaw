@@ -22,7 +22,12 @@ export default tseslint.config(
   {
     // 类型感知块：projectService 就近挂 root tsconfig.json（src/**）与
     // electron/tsconfig.json（electron/src/**），不需要额外 project 文件。
-    files: ['src/**/*.ts', 'electron/src/**/*.ts'],
+    files: [
+      'src/**/*.ts',
+      'src/**/*.tsx',
+      'electron/src/**/*.ts',
+      'electron/src/**/*.tsx',
+    ],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: {
