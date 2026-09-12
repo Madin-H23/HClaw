@@ -45,6 +45,14 @@ import {
   writeCredentialsFile,
 } from './runtime-config.js';
 import { providerPool } from './provider-pool.js';
+// HClaw quota-router（T6 装配接线）：三处注入点的「取注入对象→调用→返回」面。
+// 决策与装配逻辑全在 quota-router 模块（SPEC #1），此处零决策逻辑。
+import {
+  ensureQuotaRoutingInstalled,
+  quotaBindingGate,
+  quotaFallbackModel,
+  quotaStickyGate,
+} from './quota-router/assembly.js';
 import { resolveProviderFailureDisposition } from './provider-failure.js';
 import {
   issueWorkspaceMemoryWriteCapability,
@@ -834,6 +842,10 @@ export function trySelectPoolProvider(
   previousProviderId?: string;
   resetSession?: boolean;
 } | null {
+  // HClaw quota-router（注入点①装配）：幂等把额度前置过滤策略挂上池。
+  // 必要性：selectProvider 是池选路唯一入口，策略必须在其首次执行前挂好；
+  // 未配置 quota-router 时策略为 no-op 直通，上游行为不变。
+  ensureQuotaRoutingInstalled();
   const selectedModelConfigId = modelConfigId ?? getDefaultProviderId();
   const existingBoundId = getSessionProviderId(groupFolder, agentId);
   if (selectedModelConfigId) {
@@ -842,13 +854,27 @@ export function trySelectPoolProvider(
     // its top-level Agent. `enabled` only controls the global automatic pool;
     // an Agent may explicitly bind any saved model configuration.
     const providers = getProviders();
-    const selected = providers.find(
+    let selected = providers.find(
       (provider) => provider.id === selectedModelConfigId,
     );
     if (!selected) {
       throw new Error(
         `agent_model_unavailable: model configuration ${selectedModelConfigId} is missing`,
       );
+    }
+    // HClaw quota-router（注入点②绑定否决钩子）：绑定路径完全绕过池（上游
+    // 语义），额度否决无其他缝可挂——取注入对象→调用→按裁决重指/拒绝。
+    // null = quota-router 未激活（原样放行）；降档重指后既有 setSessionProviderId
+    // 即把新粘滞点落到降档目标（T5 newStickyProviderId 消费）。
+    const quotaGate = quotaBindingGate(groupFolder, agentId, selected.id);
+    if (quotaGate?.action === 'veto') {
+      throw new Error(`quota_veto: ${quotaGate.reason}`);
+    }
+    if (quotaGate?.action === 'downgrade') {
+      const downgradeTarget = providers.find(
+        (provider) => provider.id === quotaGate.providerId,
+      );
+      if (downgradeTarget) selected = downgradeTarget;
     }
     providerPool.refreshFromConfig(providers, getBalancingConfig());
     const resolved = resolveProviderById(selected.id);
@@ -887,6 +913,15 @@ export function trySelectPoolProvider(
         logger.info(
           { groupFolder, agentId: agentId || null, providerId: boundId },
           'Sticky provider is unhealthy, falling back to pool selection',
+        );
+      } else if (quotaStickyGate(groupFolder, agentId, boundId) === 'migrate') {
+        // HClaw quota-router（A4 粘滞标记消费）：粘滞供应商额度「耗尽」→
+        // 轮边界迁移（T5 newStickyFromProviderId）。跳过粘滞复用落到池选路
+        // （注入点①前置过滤已挂上池），选路尾部既有 setSessionProviderId
+        // 重设粘滞点。null/keep = 未激活或非耗尽，照旧复用（轮内不迁移）。
+        logger.info(
+          { groupFolder, agentId: agentId || null, providerId: boundId },
+          'Sticky provider quota exhausted, migrating binding at turn boundary',
         );
       } else {
         try {
@@ -1402,7 +1437,17 @@ export function buildVolumeMounts(
   if (mcpPolicyMode !== 'inherit') {
     envLines.push(`MINICLAW_AGENT_MCP_POLICY=${mcpPolicyMode}`);
   }
-  applyFallbackModelToEnvLines(envLines);
+  // HClaw quota-router（注入点③）：运行中 fallback 源改为「按用户余额与档位
+  // 计算的降档序列」（装配层计算）。返回 undefined（未激活/序列为空）时走
+  // applyFallbackModelToEnvLines 的缺省参数 = SystemSettings 单值（上游原样，
+  // fail-open）。必要性：fallback 消费点即此 env 组装处，序列只有装配层能算。
+  applyFallbackModelToEnvLines(
+    envLines,
+    quotaFallbackModel({
+      excludeModelId: resolvedProvider?.config.anthropicModel ?? null,
+      balanceUserId: group.created_by ?? null,
+    }) ?? undefined,
+  );
   applyFeishuCliBindingToEnvLines(envLines, feishuCliBinding);
   if (envLines.length > 0) {
     const envFilePath = path.join(envDir, 'env');
@@ -2586,7 +2631,14 @@ export async function runHostAgent(
         hostEnv[line.slice(0, eqIdx)] = line.slice(eqIdx + 1);
       }
     }
-    const fallbackModel = getSystemSettings().fallbackModel?.trim();
+    // HClaw quota-router（注入点③）：fallback 源按余额与档位计算的降档序列
+    // 取值；quota-router 未激活/序列为空返回 null → 回退 SystemSettings 单值
+    // （上游原样，fail-open）。
+    const fallbackModel =
+      quotaFallbackModel({
+        excludeModelId: globalConfig.anthropicModel,
+        balanceUserId: group.created_by ?? null,
+      }) ?? getSystemSettings().fallbackModel?.trim();
     if (fallbackModel) {
       hostEnv['MINICLAW_FALLBACK_MODEL'] = fallbackModel;
     } else {

@@ -19,7 +19,8 @@ const OFFICIAL_CLAUDE_PROFILE_ID = '__official__';
  * 的 ciphertext，配合 key 文件泄漏即可解密）。统一走该 helper：tmp 文件以
  * 0o600 创建，rename 后再次 chmod 防御 APFS 上 mode 不跟随 inode 的边角情况。
  */
-function writeSecretFile(targetPath: string, data: string): void {
+// HClaw quota-router 复用（T3）：仅放开可见性，函数体零改动。
+export function writeSecretFile(targetPath: string, data: string): void {
   const tmp = `${targetPath}.tmp`;
   // 先 unlink stale tmp，避免 fs.writeFileSync 在文件已存在时复用旧 mode
   // (Node 文档：mode 仅在 on-create 时应用)。残留 0o644 会让我们这次写入
@@ -682,7 +683,8 @@ function buildConfig(
   };
 }
 
-function getOrCreateEncryptionKey(): Buffer {
+// HClaw quota-router 复用（T3）：仅放开可见性，函数体零改动。
+export function getOrCreateEncryptionKey(): Buffer {
   fs.mkdirSync(CLAUDE_CONFIG_DIR, { recursive: true });
 
   if (fs.existsSync(CLAUDE_CONFIG_KEY_FILE)) {
@@ -769,7 +771,8 @@ function decryptSecrets(secrets: EncryptedSecrets): SecretPayload {
   return result;
 }
 
-function encryptChannelSecret<T>(payload: T): EncryptedSecrets {
+// HClaw quota-router 复用（T3）：仅放开可见性，函数体零改动。
+export function encryptChannelSecret<T>(payload: T): EncryptedSecrets {
   const key = getOrCreateEncryptionKey();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
@@ -783,7 +786,8 @@ function encryptChannelSecret<T>(payload: T): EncryptedSecrets {
   };
 }
 
-function decryptChannelSecret<T>(secrets: EncryptedSecrets): T {
+// HClaw quota-router 复用（T3）：仅放开可见性，函数体零改动。
+export function decryptChannelSecret<T>(secrets: EncryptedSecrets): T {
   const key = getOrCreateEncryptionKey();
   const iv = Buffer.from(secrets.iv, 'base64');
   const tag = Buffer.from(secrets.tag, 'base64');
@@ -3300,7 +3304,9 @@ export interface AppearanceConfig {
 }
 
 const DEFAULT_APPEARANCE_CONFIG: AppearanceConfig = {
-  appName: ASSISTANT_NAME,
+  // T1 品牌浅改（ADR-0005）：站点/应用显示名默认 HClaw；
+  // AI 人格名（aiName）沿用上游内置主 Agent 名 ASSISTANT_NAME，不动。
+  appName: 'HClaw',
   aiName: ASSISTANT_NAME,
   aiAvatarEmoji: '\u{1F431}',
   aiAvatarColor: '#0d9488',

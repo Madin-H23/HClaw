@@ -10,7 +10,9 @@ import {
 import fs from 'node:fs';
 import path from 'node:path';
 
-const APP_NAME = 'Miniclaw';
+import { startEmbeddedServer } from './embedded-server.js';
+
+const APP_NAME = 'HClaw';
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:3000';
 const WINDOW_DEFAULTS = {
   width: 1440,
@@ -71,16 +73,31 @@ function resolveDesktopUrls(): { serverUrl: string; rendererUrl: string } {
     getCliValue('--server-url') ||
     process.env.MINICLAW_SERVER_URL ||
     DEFAULT_SERVER_URL;
-  const serverUrl = normalizeHttpUrl(serverValue, 'Miniclaw server URL');
+  const serverUrl = normalizeHttpUrl(serverValue, 'HClaw server URL');
   const rendererValue =
     getCliValue('--renderer-url') ||
     process.env.MINICLAW_RENDERER_URL ||
     serverUrl;
-  const rendererUrl = normalizeHttpUrl(rendererValue, 'Miniclaw renderer URL');
+  const rendererUrl = normalizeHttpUrl(rendererValue, 'HClaw renderer URL');
   return { serverUrl, rendererUrl };
 }
 
-const { serverUrl, rendererUrl } = resolveDesktopUrls();
+// T8（ADR-0007）：缺省内嵌——main 进程启动完整 server 后壳连本机内嵌实例；
+// 显式 --server-url / MINICLAW_SERVER_URL 时为远程模式，本进程不内嵌，URL 解析
+// 语义原样。内嵌模式下显式 --renderer-url / MINICLAW_RENDERER_URL 仍然生效。
+const EMBED_SERVER_ENABLED =
+  !getCliValue('--server-url') && !process.env.MINICLAW_SERVER_URL;
+const EXPLICIT_RENDERER_URL =
+  getCliValue('--renderer-url') || process.env.MINICLAW_RENDERER_URL;
+
+// 远程模式：立即按原逻辑解析；内嵌模式：先占位缺省地址，server 就绪后由
+// bootstrap 回填（启动失败保持缺省——退化为「手动起 server + 壳连 localhost」
+// 的 ADR-0007 降级形态，弹窗提示）。
+const initialUrls = EMBED_SERVER_ENABLED
+  ? { serverUrl: DEFAULT_SERVER_URL, rendererUrl: DEFAULT_SERVER_URL }
+  : resolveDesktopUrls();
+let serverUrl = initialUrls.serverUrl;
+let rendererUrl = initialUrls.rendererUrl;
 
 function getDesktopConfig(): DesktopConfig {
   return {
@@ -102,10 +119,16 @@ function isFinitePositive(value: unknown): value is number {
 
 function loadWindowState(): WindowState {
   try {
-    const parsed = JSON.parse(fs.readFileSync(getWindowStatePath(), 'utf8')) as Partial<WindowState>;
+    const parsed = JSON.parse(
+      fs.readFileSync(getWindowStatePath(), 'utf8'),
+    ) as Partial<WindowState>;
     return {
-      width: isFinitePositive(parsed.width) ? parsed.width : WINDOW_DEFAULTS.width,
-      height: isFinitePositive(parsed.height) ? parsed.height : WINDOW_DEFAULTS.height,
+      width: isFinitePositive(parsed.width)
+        ? parsed.width
+        : WINDOW_DEFAULTS.width,
+      height: isFinitePositive(parsed.height)
+        ? parsed.height
+        : WINDOW_DEFAULTS.height,
       ...(isFinitePositive(parsed.x) ? { x: parsed.x } : {}),
       ...(isFinitePositive(parsed.y) ? { y: parsed.y } : {}),
       isMaximized: parsed.isMaximized === true,
@@ -128,9 +151,13 @@ function saveWindowState(): void {
 
   try {
     fs.mkdirSync(path.dirname(getWindowStatePath()), { recursive: true });
-    fs.writeFileSync(getWindowStatePath(), `${JSON.stringify(state, null, 2)}\n`, {
-      mode: 0o600,
-    });
+    fs.writeFileSync(
+      getWindowStatePath(),
+      `${JSON.stringify(state, null, 2)}\n`,
+      {
+        mode: 0o600,
+      },
+    );
   } catch (error) {
     console.warn('[desktop] failed to save window state', error);
   }
@@ -139,8 +166,14 @@ function saveWindowState(): void {
 function isAllowedRendererUrl(rawUrl: string): boolean {
   try {
     const candidate = new URL(rawUrl);
-    const allowed = new Set([new URL(serverUrl).origin, new URL(rendererUrl).origin]);
-    return (candidate.protocol === 'http:' || candidate.protocol === 'https:') && allowed.has(candidate.origin);
+    const allowed = new Set([
+      new URL(serverUrl).origin,
+      new URL(rendererUrl).origin,
+    ]);
+    return (
+      (candidate.protocol === 'http:' || candidate.protocol === 'https:') &&
+      allowed.has(candidate.origin)
+    );
   } catch {
     return false;
   }
@@ -163,8 +196,8 @@ async function openExternalUrl(rawUrl: string): Promise<void> {
 function showAbout(): Promise<Electron.MessageBoxReturnValue> {
   const options = {
     type: 'info',
-    title: 'About Miniclaw',
-    message: 'Miniclaw',
+    title: 'About HClaw',
+    message: 'HClaw · 炉心',
     detail: `Pi Agent Runtime workspace\nVersion ${app.getVersion()}`,
   } as const;
   return mainWindow && !mainWindow.isDestroyed()
@@ -175,9 +208,9 @@ function showAbout(): Promise<Electron.MessageBoxReturnValue> {
 function errorPageHtml(failedUrl: string): string {
   const safeUrl = JSON.stringify(failedUrl).replace(/</g, '\\u003c');
   return `<!doctype html>
-<html><head><meta charset="utf-8"><title>Miniclaw is unavailable</title>
+<html><head><meta charset="utf-8"><title>HClaw is unavailable</title>
 <style>body{font:16px system-ui,sans-serif;background:#101114;color:#f4f4f5;display:grid;place-items:center;min-height:100vh;margin:0}main{max-width:620px;padding:32px;border:1px solid #34363d;border-radius:16px;background:#181a1f}h1{font-size:22px}p{color:#b7bbc5;line-height:1.5}code{word-break:break-all;color:#d8b4fe}button{border:0;border-radius:8px;background:#a78bfa;color:#17131f;padding:10px 16px;font-weight:600;cursor:pointer}</style>
-</head><body><main><h1>Miniclaw Backend 未连接</h1><p>请先启动 Miniclaw Backend，或检查桌面应用配置的服务地址：</p><p><code>${safeUrl}</code></p><button id="retry">重试连接</button><script>document.getElementById('retry').addEventListener('click',()=>window.miniclawDesktop?.retry())</script></main></body></html>`;
+</head><body><main><h1>HClaw Backend 未连接</h1><p>请先启动 HClaw Backend，或检查桌面应用配置的服务地址：</p><p><code>${safeUrl}</code></p><button id="retry">重试连接</button><script>document.getElementById('retry').addEventListener('click',()=>window.miniclawDesktop?.retry())</script></main></body></html>`;
 }
 
 async function loadRenderer(): Promise<void> {
@@ -187,7 +220,9 @@ async function loadRenderer(): Promise<void> {
   } catch (error) {
     console.warn('[desktop] renderer could not load', error);
     if (!mainWindow.isDestroyed()) {
-      await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorPageHtml(rendererUrl))}`);
+      await mainWindow.loadURL(
+        `data:text/html;charset=utf-8,${encodeURIComponent(errorPageHtml(rendererUrl))}`,
+      );
     }
   }
 }
@@ -215,21 +250,33 @@ function createMainWindow(): BrowserWindow {
   });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void openExternalUrl(url).catch((error) => console.warn('[desktop] blocked external URL', error));
+    void openExternalUrl(url).catch((error) =>
+      console.warn('[desktop] blocked external URL', error),
+    );
     return { action: 'deny' };
   });
 
   window.webContents.on('will-navigate', (event, url) => {
     if (isAllowedRendererUrl(url)) return;
     event.preventDefault();
-    void openExternalUrl(url).catch((error) => console.warn('[desktop] blocked navigation', error));
+    void openExternalUrl(url).catch((error) =>
+      console.warn('[desktop] blocked navigation', error),
+    );
   });
 
-  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    if (!isMainFrame || errorCode === -3 || validatedURL.startsWith('data:')) return;
-    console.warn(`[desktop] renderer load failed (${errorCode}): ${errorDescription}`);
-    void window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorPageHtml(validatedURL || rendererUrl))}`);
-  });
+  window.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame || errorCode === -3 || validatedURL.startsWith('data:'))
+        return;
+      console.warn(
+        `[desktop] renderer load failed (${errorCode}): ${errorDescription}`,
+      );
+      void window.loadURL(
+        `data:text/html;charset=utf-8,${encodeURIComponent(errorPageHtml(validatedURL || rendererUrl))}`,
+      );
+    },
+  );
 
   window.once('ready-to-show', () => {
     if (state.isMaximized) window.maximize();
@@ -248,7 +295,8 @@ function createMainWindow(): BrowserWindow {
 function registerIpcHandlers(): void {
   ipcMain.handle('desktop:get-config', () => getDesktopConfig());
   ipcMain.handle('desktop:open-external', (_event, url: unknown) => {
-    if (typeof url !== 'string') throw new Error('External URL must be a string');
+    if (typeof url !== 'string')
+      throw new Error('External URL must be a string');
     return openExternalUrl(url);
   });
   ipcMain.handle('desktop:retry', () => loadRenderer());
@@ -268,9 +316,9 @@ function createApplicationMenu(): void {
   const template: MenuItemConstructorOptions[] = [
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
     {
-      label: 'Miniclaw',
+      label: 'HClaw',
       submenu: [
-        { label: 'About Miniclaw', click: () => void showAbout() },
+        { label: 'About HClaw', click: () => void showAbout() },
         { type: 'separator' },
         { role: 'quit' },
       ],
@@ -279,7 +327,11 @@ function createApplicationMenu(): void {
     {
       label: 'Help',
       submenu: [
-        { label: 'Miniclaw on GitHub', click: () => void openExternalUrl('https://github.com/helsome/miniclaw') },
+        {
+          label: 'Miniclaw on GitHub',
+          click: () =>
+            void openExternalUrl('https://github.com/helsome/miniclaw'),
+        },
       ],
     },
   ];
@@ -297,7 +349,26 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus();
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    if (EMBED_SERVER_ENABLED) {
+      try {
+        const baseUrl = await startEmbeddedServer((message) =>
+          console.log(`[desktop:embed] ${message}`),
+        );
+        serverUrl = normalizeHttpUrl(baseUrl, 'HClaw embedded server URL');
+        rendererUrl = EXPLICIT_RENDERER_URL
+          ? normalizeHttpUrl(EXPLICIT_RENDERER_URL, 'HClaw renderer URL')
+          : serverUrl;
+      } catch (error) {
+        console.warn('[desktop] embedded server failed to start', error);
+        dialog.showErrorBox(
+          'HClaw 内嵌服务启动失败',
+          `已回退到缺省地址 ${DEFAULT_SERVER_URL}；可手动启动 HClaw Backend 后重试。\n\n${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
     registerIpcHandlers();
     createApplicationMenu();
     createMainWindow();

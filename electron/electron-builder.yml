@@ -1,33 +1,87 @@
-appId: cc.miniclaw.desktop
-productName: Miniclaw
-copyright: Copyright © 2026 Miniclaw contributors
+# T8（ADR-0007）：打包根为仓库根——安装包 = 桌面壳 + 内嵌 server（dist/ 后端
+# tsc 产物 + 生产 node_modules）+ web 前端产物（extraResources，启动时物化到
+# userData/server/web/dist 供上游 serveStatic 相对 cwd 命中）。macOS/linux 段
+# 保留上游原语义（路径随打包根加 electron/ 前缀），本票仅在 Windows 实测。
+appId: com.hfamily.hclaw
+productName: HClaw
+copyright: Copyright © 2026 HClaw contributors
 electronVersion: 39.8.10
-icon: assets/miniclaw-icon.png
+# Windows 打包 playbook：electronDist 复用本地 node_modules/electron/dist，
+# 规避 electron 二进制下载 ECONNRESET 与杀软锁 rename（docs/limitations.md）
+electronDist: node_modules/electron/dist
+icon: electron/assets/miniclaw-icon.png
 
 directories:
-  output: release
+  output: electron/release
 
 files:
+  # 桌面壳（main/preload esbuild 产物 + 图标资产）
+  - electron/dist/**/*
+  - electron/assets/**/*
+  # 内嵌 server：后端 tsc 产物 + PTY worker（terminal-manager 按 ../src 相对解析）
   - dist/**/*
-  - assets/**/*
+  - src/pty-worker.cjs
   - package.json
   - '!**/*.map'
 
 extraMetadata:
-  main: dist/main.cjs
+  main: electron/dist/main.cjs
 
 asar: true
+# 内嵌 server 面整体落 app.asar.unpacked（真实文件系统）：上游 ESM 产物 import
+# 与原生模块（better-sqlite3）require 不经过 asar 虚拟路径；壳本体留在 asar
+asarUnpack:
+  - dist/**/*
+  - src/pty-worker.cjs
+  - node_modules/**/*
+
+# 原生模块重编走桌面打包脚本链（desktop:rebuild:electron 用 prebuild-install
+# 装 better-sqlite3 的 electron ABI 官方预编译；node-pty 为 NAPI 预编译无需重
+# 编），关掉 electron-builder 内置 npm rebuild——其捆绑 node-gyp 在本机 VS2022
+# 探测失败（Could not find any Visual Studio installation to use），且对 NAPI
+# 模块本就多余。
+npmRebuild: false
+
+extraResources:
+  # web 前端产物：内嵌 server 启动时物化到 userData/server/web/dist
+  - from: web/dist
+    to: web-dist
+  # 宿主机模式 agent 执行轮依赖（container-runner preflight 按 cwd 相对检查
+  # container/agent-runner/{node_modules,dist}）；内嵌启动时以 junction 物化到
+  # userData/server/container/agent-runner。运行时仍需系统 Node.js（上游
+  # node-resolver 语义，src/ 零 diff 约束），见 docs/limitations.md。
+  # node_modules 默认被 extraResources 全局过滤，需 from 直指 + 显式 filter。
+  - from: container/agent-runner
+    to: container/agent-runner
+    filter:
+      - '**/*'
+      - '!node_modules/**'
+      - '!src/**'
+  - from: container/agent-runner/node_modules
+    to: container/agent-runner/node_modules
+    filter:
+      - '**/*'
+
+win:
+  icon: electron/assets/miniclaw-icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  # 上游缺省即 oneClick + perMachine=false（按用户装 %LOCALAPPDATA%），
+  # 显式落字以免未来缺省漂移；卸载保留 userData（用户数据不随包删）
+  oneClick: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
 
 mac:
   category: public.app-category.productivity
-  icon: assets/miniclaw.icns
+  icon: electron/assets/miniclaw.icns
   target:
     - dmg
     - zip
-
-win:
-  target:
-    - nsis
 
 linux:
   category: Utility
