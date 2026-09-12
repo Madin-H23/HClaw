@@ -302,10 +302,12 @@ export class ProactiveMessageAssembly {
     }
 
     try {
-      // ⚠ B4 承接项：本装配不设 per-send 超时——adapter.sendMessage 若悬挂
-      // （上游 WS/HTTP 无内置超时的路径），notify 以 pending 承接。B4 串行接
-      // notify 时必须加 per-send 超时或并发隔离，否则一个悬挂渠道会阻塞整个
-      // 调度循环（触发节奏的保障归 B4）。
+      // B4 承接项已落地（票 #24）：per-send 超时不加在本装配——notify 是
+      // 「结果内化」的语义面，超时上界属触发源侧的节奏保障，由
+      // trigger-dispatch.ts deliverProactiveTrigger 以竞速包裹本方法实现
+      // （超时=可观察的 send-timeout 结果+WARN；悬挂渠道不再阻塞调度循环；
+      // 调度器侧另有兜底 catch）。直接调用本方法的其他调用方仍需自行保障
+      // 完成上界。
       await adapter.sendMessage(target, request.content);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
