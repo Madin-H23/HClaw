@@ -79,6 +79,21 @@
 - 后续票验收时重跑同一命令，**确定性失败集合与本节清单一致**（允许 #17 所述的漫游抖动额外出现，需单独重跑确认转绿）且新票自身新增测试全绿，即视为「基线对比通过」。
 - 基线为单次实测；失败簇清零（#10–#17 关闭）后应更新本节数字并附新日期。
 
+## 规约层存量基线（#27 实测）
+
+- **日期**：2026-09-13；**工具**：oxlint 1.82.0，默认 correct 档（含 eslint/unicorn/oxc 内置插件规则），全仓快扫。
+- **基线数**：**164 warnings / 0 errors**（906 个 JS/TS 文件、96 条规则，实测 <0.5s；node_modules/dist 经 .gitignore 排除，web/ 与 container/ 一并计入）。
+- **存量分布**：`eslint(no-unused-vars)` 81、`eslint(no-useless-escape)` 29、`eslint(no-unused-expressions)` 14、`unicorn(no-useless-fallback-in-spread)` 13、`unicorn(no-useless-spread)` 11、`eslint(no-control-regex)` 8、`eslint(no-useless-catch)` 2，其余各 1（`require-yield`、`no-unsafe-optional-chaining`、`no-unassigned-vars`、`no-useless-length-check`、`no-single-promise-in-promise-methods`、`oxc(const-comparisons)`）。
+- **策略选型：(b) informational，不 gate**。论证：存量集中在大量上游巨石 src/ 文件（81 条 unused-vars 多为上游未用 import/变量），修复=大面积触碰上游源码，制造海量 diff 噪音、破坏「上游语义零改动」的可审计面；164 条远超「存量少则修掉」的合理半径，不属于本票「机械违例修复」范围。CI 快扫仅记数（warnings 退出码 0），出现 error 级诊断才失败。后续如清偿应立独立票分批处理，并更新本节数字。
+- 复现：`npm run lint:oxlint`（本地/CI 同口径）。
+
+### ESLint 增量门禁存量基线（#27 复审实测）
+
+- **日期**：2026-09-13；**口径**：gating 规则集（6 条）直跑全量类型感知面 `src/**/*.ts` + `electron/src/**/*.ts`（与 eslint.config.mjs 类型块同范围）。
+- **基线数**：**361 problems / 61 文件**（src 359/59 + electron/src 2/2）。逐规则：`no-unnecessary-type-assertion` 300（绝对主导，多为上游 `as` 断言）、`no-floating-promises` 24、`no-promise-executor-return` 17、`no-misused-promises` 13、`await-thenable` 3，另有 4 条「Unused eslint-disable directive」——上游代码里对**未启用规则**（no-constant-condition / no-unused-vars / no-control-regex）的陈旧豁免注释，被 reportUnusedDisableDirectives 检出（index.ts、plugin-materializer.ts、runtime-config.ts、task-routing.ts 各 1）。
+- **闸门粒度=文件**：增量口径只对「相对基线分叉的改动文件」**整文件**负责——未来任何票触碰上面 61 个含存量文件即须清偿该文件全量 problems（真实修复或行级豁免标注+理由，豁免纪律见 AGENTS.md「三层门禁」），存量不因未触碰而被追，也不因文件被触碰而豁免。热面示例（problems 数）：`routes/config.ts` 52、`routes/groups.ts` 20、`routes/billing.ts` 18、`index.ts` 17、`discord.ts` 11、`web.ts` 11、`db.ts` 5、`dingtalk.ts` 4、`electron/src/main/embedded-server.ts` 1。
+- 复现：`node node_modules/eslint/bin/eslint.js "src/**/*.ts" "electron/src/**/*.ts"`；清偿后数字应单调下降并回写本节。
+
 ## 应用图标
 
 图标内容已换 HClaw 炉心图（火焰+钳形卷曲），文件名保留上游路径以维持测试契约。替换清单：`electron/assets/miniclaw-icon.png`（1024×1024，内容替换）、`web/public/icons/icon-192.png`、`web/public/icons/apple-touch-icon-180.png`（HTML favicon/touch 引用）、`web/public/icons/icon-512.png`、`web/public/icons/icon-512-maskable.png`（PWA manifest 引用，maskable 版图形按 80% 安全区居中）——尺寸规格与上游一致；矢量母版入库 `docs/assets/hclaw-icon.svg`。未动：`electron/assets/miniclaw.icns`（mac 打包不在本票）、`loading-logo.svg`/`logo-text.svg`（wordmark 动画，随后续渲染面票处理）、其余未被 favicon/manifest 引用的 icon-\* 尺寸。
@@ -99,7 +114,7 @@ T1 按 ADR-0005 完成**产品身份面**替换：electron 壳（窗口标题 / 
 
 ### 其他取舍
 
-- **lint 口径**：`npm run lint` = `npm run format:check`（prettier 对「相对 origin/develop 分叉的变更文件」整文件检查；CI 同口径，`FORMAT_BASE_REF=origin/develop`）。`scripts/check-format-changed.mjs` 顺手修复 Windows spawn 兼容（改用 `process.execPath + prettier.cjs` 直跑，规避 Node 对 `.cmd` 的 spawnSync EINVAL 加固）；Windows autocrlf 工作区会因行尾被整文件标记——已对本分支变更文件统一 prettier 化（行尾 LF + 存量重排，无语义变更）。
+- **lint 口径**：`npm run lint` = format:check + lint:types 串联（#27 起，防「已 lint」错觉；prettier 对「相对 origin/develop 分叉的变更文件」整文件检查；CI 同口径，`FORMAT_BASE_REF=origin/develop`）。两扫描脚本缺省回退链均为 `<X>_BASE_REF` → origin/develop → origin/main → HEAD^（#27 修正：origin/develop 插入为首选回退，此前失真为 origin/main 优先）。`scripts/check-format-changed.mjs` 顺手修复 Windows spawn 兼容（改用 `process.execPath + prettier.cjs` 直跑，规避 Node 对 `.cmd` 的 spawnSync EINVAL 加固）；Windows autocrlf 工作区会因行尾被整文件标记——已对本分支变更文件统一 prettier 化（行尾 LF + 存量重排，无语义变更）。
 - **上游测试断言的两类处理口径**：断言**随产品面改名**的（如 `electron-shell-contract` 冻结 `productName: Miniclaw`）——随品牌更新直接同步断言并注明依据（票面指令 + ADR-0005）；上游**内容契约**冲突（如 #16 断言上游 README 术语段）——涉及上游文案取舍，立票裁决、本票不夹带。#16 已裁决：方案②（README 补回「智能体优先工作模型」术语，上游契约零改动）。
 - **上游测试冻结的旧产品名**：`tests/electron-shell-contract.test.ts` 断言打包配置 `productName: Miniclaw`，与票面指令「productName 改 HClaw」直接冲突。已将该测试的品牌断言同步为 `productName: HClaw`（附注释），测试意图（打包聚焦桌面壳、图标与产物目录不动）不变；上游图标断言 `miniclaw-icon.png` 未动（图标不在本票）。
 - **copyright 字段**：`electron-builder.yml` 的 copyright 随 productName 一并改为 HClaw contributors（安装包元数据属产品可见面）；上游署名以 README Attribution + LICENSE（未动）承载。
