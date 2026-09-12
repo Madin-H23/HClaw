@@ -63,6 +63,9 @@ describe('buildNodeCandidates', () => {
   });
 
   test('NVM_BIN / FNM_MULTISHELL_PATH / VOLTA_HOME are joined with node', () => {
+    // Windows 适配（#12）：src/node-resolver.ts 用 path.join 拼接候选路径
+    // （Windows 产生反斜杠形态）。断言语义是"环境变量目录与 node 名拼接"，
+    // 期望值用 path.join 同源构造：POSIX 上与原字面量逐字符一致。
     const candidates = buildNodeCandidates(
       ctx({
         env: {
@@ -73,8 +76,8 @@ describe('buildNodeCandidates', () => {
         isExecutable: () => false,
       }),
     );
-    expect(candidates).toContain('/nvm/bin/node');
-    expect(candidates).toContain('/fnm/shell/bin/node');
+    expect(candidates).toContain(path.join('/nvm/bin', 'node'));
+    expect(candidates).toContain(path.join('/fnm/shell', 'bin', 'node'));
     expect(candidates).toContain(path.join('/volta', 'bin', 'node'));
   });
 
@@ -133,7 +136,9 @@ describe('buildNodeCandidates', () => {
       }),
     );
     expect(
-      candidates.every((c) => !c.endsWith('/.nvm/versions/node/current/bin/node')),
+      candidates.every(
+        (c) => !c.endsWith('/.nvm/versions/node/current/bin/node'),
+      ),
     ).toBe(true);
   });
 
@@ -145,27 +150,28 @@ describe('buildNodeCandidates', () => {
         isExecutable: () => false,
       }),
     );
-    expect(candidates.every((c) => typeof c === 'string' && c.length > 0)).toBe(true);
+    expect(candidates.every((c) => typeof c === 'string' && c.length > 0)).toBe(
+      true,
+    );
   });
 });
 
 describe('resolveBinaryOnPath', () => {
   test('returns first executable match in PATH order', () => {
-    const exec = new Set(['/opt/bin/node']);
+    // Windows 适配（#12）：resolveBinaryOnPath 按 path.delimiter 切分 PATH、
+    // 用 path.join 拼候选（POSIX 上 ':' 分隔 + '/' join，结果与原字面量
+    // 逐字符一致；Windows 上是 ';' 分隔 + 反斜杠 join）。
+    const exec = new Set([path.join('/opt/bin', 'node')]);
     const result = resolveBinaryOnPath(
       'node',
-      '/no-here:/opt/bin:/usr/bin',
+      ['/no-here', '/opt/bin', '/usr/bin'].join(path.delimiter),
       (p) => exec.has(p),
     );
-    expect(result).toBe('/opt/bin/node');
+    expect(result).toBe(path.join('/opt/bin', 'node'));
   });
 
   test('returns null when nothing matches', () => {
-    const result = resolveBinaryOnPath(
-      'node',
-      '/a:/b:/c',
-      () => false,
-    );
+    const result = resolveBinaryOnPath('node', '/a:/b:/c', () => false);
     expect(result).toBeNull();
   });
 
@@ -175,13 +181,15 @@ describe('resolveBinaryOnPath', () => {
   });
 
   test('skips empty segments without crashing', () => {
-    const exec = new Set(['/usr/bin/node']);
+    // Windows 适配（#12）：空 PATH 段样本按 path.delimiter 构造（POSIX 上
+    // 仍为原字面量 '::/usr/bin::'），候选与期望值用 path.join 同源。
+    const exec = new Set([path.join('/usr/bin', 'node')]);
     const result = resolveBinaryOnPath(
       'node',
-      '::/usr/bin::',
+      ['', '', '/usr/bin', '', ''].join(path.delimiter),
       (p) => exec.has(p),
     );
-    expect(result).toBe('/usr/bin/node');
+    expect(result).toBe(path.join('/usr/bin', 'node'));
   });
 });
 
@@ -210,7 +218,11 @@ describe('resolveNodeBinary', () => {
   });
 
   test('does not choose Bun-like execPath or argv0 even when executable', () => {
-    const exec = new Set(['/opt/homebrew/bin/bun', '/nvm/bin/node']);
+    // Windows 适配（#12）：NVM_BIN 候选由 path.join 拼接，期望值同源构造。
+    const exec = new Set([
+      '/opt/homebrew/bin/bun',
+      path.join('/nvm/bin', 'node'),
+    ]);
     const result = resolveNodeBinary(
       ctx({
         execPath: '/opt/homebrew/bin/bun',
@@ -219,18 +231,19 @@ describe('resolveNodeBinary', () => {
         isExecutable: (p) => exec.has(p),
       }),
     );
-    expect(result).toBe('/nvm/bin/node');
+    expect(result).toBe(path.join('/nvm/bin', 'node'));
   });
 
   test('falls back to NVM_BIN/node when execPath and argv0 are missing', () => {
-    const exec = new Set(['/nvm/bin/node']);
+    // Windows 适配（#12）：同上，path.join 同源构造。
+    const exec = new Set([path.join('/nvm/bin', 'node')]);
     const result = resolveNodeBinary(
       ctx({
         env: { NVM_BIN: '/nvm/bin' },
         isExecutable: (p) => exec.has(p),
       }),
     );
-    expect(result).toBe('/nvm/bin/node');
+    expect(result).toBe(path.join('/nvm/bin', 'node'));
   });
 
   test('resolves via PATH when env-specific candidates miss', () => {

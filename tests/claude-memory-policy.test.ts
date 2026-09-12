@@ -7,6 +7,14 @@ import {
   resolveManagedHostClaudeMdExcludes,
 } from '../container/agent-runner/src/claude-memory-policy.js';
 
+// Windows 适配（#12）：被测模块的输出契约是「可移植正斜杠 picomatch 模式」
+// （claude-memory-policy.ts 的 toClaudePattern 把分隔符统一为 /，见本文件
+// 'emits portable picomatch patterns for Windows host paths' 用例）。期望值
+// 改用 path.posix.join 构造：POSIX 上与原 path.join 逐字符一致，Windows 上
+// 与模块真实输出（win32 join 后 portable 化）形态匹配。
+const portableJoin = (...segments: string[]): string =>
+  path.posix.join(...segments);
+
 describe('managed host Claude memory policy', () => {
   test('excludes OS-home and configured host instructions in managed mode', () => {
     expect(
@@ -18,14 +26,14 @@ describe('managed host Claude memory policy', () => {
         projectRoot: '/Users/operator/airepo/miniclaw',
       }),
     ).toEqual([
-      path.join('/Users/operator/.claude', 'CLAUDE.md'),
-      path.join('/Users/operator/.claude', 'rules', '**'),
-      path.join('/Volumes/config/claude', 'CLAUDE.md'),
-      path.join('/Volumes/config/claude', 'rules', '**'),
-      path.join('/Users/operator/airepo/miniclaw', 'CLAUDE.md'),
-      path.join('/Users/operator/airepo/miniclaw', '.claude', 'CLAUDE.md'),
-      path.join('/Users/operator/airepo/miniclaw', 'CLAUDE.local.md'),
-      path.join('/Users/operator/airepo/miniclaw', '.claude', 'rules', '**'),
+      portableJoin('/Users/operator/.claude', 'CLAUDE.md'),
+      portableJoin('/Users/operator/.claude', 'rules', '**'),
+      portableJoin('/Volumes/config/claude', 'CLAUDE.md'),
+      portableJoin('/Volumes/config/claude', 'rules', '**'),
+      portableJoin('/Users/operator/airepo/miniclaw', 'CLAUDE.md'),
+      portableJoin('/Users/operator/airepo/miniclaw', '.claude', 'CLAUDE.md'),
+      portableJoin('/Users/operator/airepo/miniclaw', 'CLAUDE.local.md'),
+      portableJoin('/Users/operator/airepo/miniclaw', '.claude', 'rules', '**'),
     ]);
   });
 
@@ -39,9 +47,9 @@ describe('managed host Claude memory policy', () => {
       projectRoot: '/Users/operator/airepo/miniclaw',
     });
 
-    expect(excludes).not.toContain(path.join(groupWorkspace, 'CLAUDE.md'));
+    expect(excludes).not.toContain(portableJoin(groupWorkspace, 'CLAUDE.md'));
     expect(excludes).toContain(
-      path.join('/Users/operator/airepo/miniclaw', 'CLAUDE.md'),
+      portableJoin('/Users/operator/airepo/miniclaw', 'CLAUDE.md'),
     );
   });
 
@@ -54,8 +62,8 @@ describe('managed host Claude memory policy', () => {
         externalClaudeDir: '/Users/operator/.claude',
       }),
     ).toEqual([
-      path.join('/Users/operator/.claude', 'CLAUDE.md'),
-      path.join('/Users/operator/.claude', 'rules', '**'),
+      portableJoin('/Users/operator/.claude', 'CLAUDE.md'),
+      portableJoin('/Users/operator/.claude', 'rules', '**'),
     ]);
   });
 
@@ -87,8 +95,12 @@ describe('managed host Claude memory policy', () => {
         ['/repo/CLAUDE.md', path.join('/repo/.claude/rules', '**')],
       ),
     ).toEqual([
-      path.normalize('/repo/CLAUDE.md'),
-      path.normalize('/repo/.claude/rules/runtime.md'),
+      // Windows 适配（#12）：findClaudeMdExcludeLeaks 回显的是 portable 化后的
+      // 输入路径（不做平台 normalize）。POSIX 上 path.normalize 为恒等变换，
+      // 原断言与之等价；Windows 上 path.normalize 会改写成反斜杠形态而偏离
+      // 模块的 portable 契约，故期望值直接用与输入一致的字符串。
+      '/repo/CLAUDE.md',
+      '/repo/.claude/rules/runtime.md',
     ]);
   });
 
