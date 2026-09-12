@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { rmTempDirWithRetry } from './helpers/win-fs-retry.js';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-profiles-db-'));
 const tmpStoreDir = path.join(tmpDir, 'db');
@@ -17,6 +18,7 @@ vi.mock('../src/config.js', async () => ({
 
 const {
   initDatabase,
+  closeDatabase,
   createUser,
   listAgentProfilesForUser,
   createAgentProfile,
@@ -43,8 +45,9 @@ beforeAll(() => {
   initDatabase();
 });
 
-afterAll(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+afterAll(async () => {
+  closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
 });
 
 function seedUser(id: string, role: 'admin' | 'member' = 'member'): void {

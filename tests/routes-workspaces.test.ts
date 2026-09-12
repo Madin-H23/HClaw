@@ -10,6 +10,7 @@ import {
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { rmTempDirWithRetry } from './helpers/win-fs-retry.js';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'routes-workspaces-'));
 const tmpStoreDir = path.join(tmpDir, 'db');
@@ -78,8 +79,9 @@ afterEach(() => {
   delete process.env.MINICLAW_TEST_USER_ROLE;
 });
 
-afterAll(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+afterAll(async () => {
+  db.closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
 });
 
 describe('/api/workspaces canonical read routes', () => {

@@ -1,8 +1,17 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { rmTempDirWithRetry } from './helpers/win-fs-retry.js';
 
 // Isolate DB to a temp dir
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'db-tx-test-'));
@@ -20,6 +29,7 @@ vi.mock('../src/config.js', async () => {
 
 const {
   initDatabase,
+  closeDatabase,
   incrementUsageBoth,
   createBillingPlan,
   getBillingPlan,
@@ -36,9 +46,10 @@ beforeAll(() => {
   probeDb = new Database(dbPath, { readonly: true });
 });
 
-afterAll(() => {
+afterAll(async () => {
   if (probeDb) probeDb.close();
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
 });
 
 beforeEach(() => {
@@ -56,10 +67,10 @@ describe('incrementUsageBoth (R2 fix: atomic monthly + daily)', () => {
     incrementUsageBoth('user1', '2026-06', '2026-06-04', 100, 50, 0.001);
 
     const monthly = probeDb
-      .prepare("SELECT * FROM monthly_usage WHERE user_id = ? AND month = ?")
+      .prepare('SELECT * FROM monthly_usage WHERE user_id = ? AND month = ?')
       .get('user1', '2026-06') as any;
     const daily = probeDb
-      .prepare("SELECT * FROM daily_usage WHERE user_id = ? AND date = ?")
+      .prepare('SELECT * FROM daily_usage WHERE user_id = ? AND date = ?')
       .get('user1', '2026-06-04') as any;
 
     expect(monthly).toBeTruthy();
@@ -75,10 +86,10 @@ describe('incrementUsageBoth (R2 fix: atomic monthly + daily)', () => {
     incrementUsageBoth('user1', '2026-06', '2026-06-04', 200, 100, 0.002);
 
     const monthly = probeDb
-      .prepare("SELECT * FROM monthly_usage WHERE user_id = ? AND month = ?")
+      .prepare('SELECT * FROM monthly_usage WHERE user_id = ? AND month = ?')
       .get('user1', '2026-06') as any;
     const daily = probeDb
-      .prepare("SELECT * FROM daily_usage WHERE user_id = ? AND date = ?")
+      .prepare('SELECT * FROM daily_usage WHERE user_id = ? AND date = ?')
       .get('user1', '2026-06-04') as any;
 
     expect(monthly.total_input_tokens).toBe(300);
@@ -93,13 +104,13 @@ describe('incrementUsageBoth (R2 fix: atomic monthly + daily)', () => {
     incrementUsageBoth('user1', '2026-06', '2026-06-05', 200, 100, 0.002);
 
     const monthly = probeDb
-      .prepare("SELECT * FROM monthly_usage WHERE user_id = ? AND month = ?")
+      .prepare('SELECT * FROM monthly_usage WHERE user_id = ? AND month = ?')
       .get('user1', '2026-06') as any;
     const day1 = probeDb
-      .prepare("SELECT * FROM daily_usage WHERE user_id = ? AND date = ?")
+      .prepare('SELECT * FROM daily_usage WHERE user_id = ? AND date = ?')
       .get('user1', '2026-06-04') as any;
     const day2 = probeDb
-      .prepare("SELECT * FROM daily_usage WHERE user_id = ? AND date = ?")
+      .prepare('SELECT * FROM daily_usage WHERE user_id = ? AND date = ?')
       .get('user1', '2026-06-05') as any;
 
     expect(monthly.total_input_tokens).toBe(300);
@@ -113,10 +124,10 @@ describe('incrementUsageBoth (R2 fix: atomic monthly + daily)', () => {
     incrementUsageBoth('user2', '2026-06', '2026-06-04', 200, 100, 0.002);
 
     const u1 = probeDb
-      .prepare("SELECT * FROM monthly_usage WHERE user_id = ?")
+      .prepare('SELECT * FROM monthly_usage WHERE user_id = ?')
       .get('user1') as any;
     const u2 = probeDb
-      .prepare("SELECT * FROM monthly_usage WHERE user_id = ?")
+      .prepare('SELECT * FROM monthly_usage WHERE user_id = ?')
       .get('user2') as any;
     expect(u1.total_input_tokens).toBe(100);
     expect(u2.total_input_tokens).toBe(200);
@@ -128,10 +139,10 @@ describe('incrementUsageBoth (R2 fix: atomic monthly + daily)', () => {
     }
 
     const monthly = probeDb
-      .prepare("SELECT total_input_tokens FROM monthly_usage WHERE user_id = ?")
+      .prepare('SELECT total_input_tokens FROM monthly_usage WHERE user_id = ?')
       .get('user1') as any;
     const daily = probeDb
-      .prepare("SELECT total_input_tokens FROM daily_usage WHERE user_id = ?")
+      .prepare('SELECT total_input_tokens FROM daily_usage WHERE user_id = ?')
       .get('user1') as any;
 
     expect(monthly.total_input_tokens).toBe(100);
@@ -186,7 +197,15 @@ describe('deleteBillingPlan (R3 fix: covers cancelled/expired subscriptions)', (
     // Insert prerequisite user row to satisfy user_subscriptions.user_id FK.
     db.prepare(
       `INSERT OR IGNORE INTO users (id, username, password_hash, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run('u1', 'testu1', 'x', 'member', 'active', new Date().toISOString(), new Date().toISOString());
+    ).run(
+      'u1',
+      'testu1',
+      'x',
+      'member',
+      'active',
+      new Date().toISOString(),
+      new Date().toISOString(),
+    );
     db.prepare(
       `INSERT INTO user_subscriptions (id, user_id, plan_id, status, started_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -209,7 +228,15 @@ describe('deleteBillingPlan (R3 fix: covers cancelled/expired subscriptions)', (
     const db = new Database(dbPath);
     db.prepare(
       `INSERT OR IGNORE INTO users (id, username, password_hash, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run('u1', 'testu1', 'x', 'member', 'active', new Date().toISOString(), new Date().toISOString());
+    ).run(
+      'u1',
+      'testu1',
+      'x',
+      'member',
+      'active',
+      new Date().toISOString(),
+      new Date().toISOString(),
+    );
     db.prepare(
       `INSERT INTO user_subscriptions (id, user_id, plan_id, status, started_at, cancelled_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
