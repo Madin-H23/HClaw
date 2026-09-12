@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { rmTempDirWithRetry } from './helpers/win-fs-retry.js';
 
 const tmpDir = fs.mkdtempSync(
   path.join(os.tmpdir(), 'canonical-workspace-mirrors-'),
@@ -22,8 +23,9 @@ beforeAll(() => {
   db.initDatabase();
 });
 
-afterAll(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+afterAll(async () => {
+  db.closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
 });
 
 describe('canonical workspace compatibility mirrors', () => {

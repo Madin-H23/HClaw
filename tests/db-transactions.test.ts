@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { rmTempDirWithRetry } from './helpers/win-fs-retry.js';
 
 // Isolate DB to a temp dir
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'db-tx-test-'));
@@ -20,6 +21,7 @@ vi.mock('../src/config.js', async () => {
 
 const {
   initDatabase,
+  closeDatabase,
   incrementUsageBoth,
   createBillingPlan,
   getBillingPlan,
@@ -36,9 +38,10 @@ beforeAll(() => {
   probeDb = new Database(dbPath, { readonly: true });
 });
 
-afterAll(() => {
+afterAll(async () => {
   if (probeDb) probeDb.close();
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
 });
 
 beforeEach(() => {

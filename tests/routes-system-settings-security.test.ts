@@ -4,6 +4,8 @@ import path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 
+import { rmTempDirWithRetry } from './helpers/win-fs-retry.js';
+
 const tmpDir = fs.mkdtempSync(
   path.join(os.tmpdir(), 'miniclaw-system-settings-security-'),
 );
@@ -105,10 +107,11 @@ beforeAll(() => {
   });
 });
 
-afterAll(() => {
+afterAll(async () => {
   delete process.env.MINICLAW_TEST_ROLE;
   delete process.env.MINICLAW_TEST_PERMISSIONS;
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  db.closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
 });
 
 describe('system settings capability boundaries', () => {

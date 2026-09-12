@@ -6,6 +6,8 @@ import { Readable } from 'stream';
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { withFsRetry } from './helpers/win-fs-retry.js';
+
 let tmpDataDir: string;
 let tmpHostDir: string;
 
@@ -23,6 +25,11 @@ const importer = await import('../src/plugin-importer.js');
 const catalog = await import('../src/plugin-catalog.js');
 const { scanHostMarketplaces, hashDirectoryContents } = importer;
 const { readCatalogIndex, getCatalogSnapshotDir } = catalog;
+
+/** 扫描落盘（catalog index 原子 rename）带 Windows 文件抖动重试。 */
+function scanHostMarketplacesWithRetry() {
+  return withFsRetry(() => scanHostMarketplaces());
+}
 
 /** Seed a marketplace under an arbitrary container `baseDir`. */
 function seedMarketplaceAt(opts: {
@@ -260,7 +267,7 @@ describe('scanHostMarketplaces', () => {
       },
     });
 
-    const report = await scanHostMarketplaces();
+    const report = await scanHostMarketplacesWithRetry();
     expect(report.marketplacesScanned).toBe(1);
     expect(report.pluginsScanned).toBe(1);
     expect(report.snapshotsCreated).toBe(1);
@@ -302,11 +309,11 @@ describe('scanHostMarketplaces', () => {
       pluginManifest: { name: 'p1', version: '1.0.0' },
       files: { 'commands/run.md': 'body' },
     });
-    const r1 = await scanHostMarketplaces();
+    const r1 = await scanHostMarketplacesWithRetry();
     expect(r1.snapshotsCreated).toBe(1);
     expect(r1.snapshotsSkipped).toBe(0);
 
-    const r2 = await scanHostMarketplaces();
+    const r2 = await scanHostMarketplacesWithRetry();
     expect(r2.snapshotsCreated).toBe(0);
     expect(r2.snapshotsSkipped).toBe(1);
   });
@@ -318,12 +325,12 @@ describe('scanHostMarketplaces', () => {
       pluginManifest: { name: 'p1', version: '1.0.0' },
       files: { 'commands/run.md': 'first' },
     });
-    const r1 = await scanHostMarketplaces();
+    const r1 = await scanHostMarketplacesWithRetry();
     const idx1 = readCatalogIndex();
     const snap1 = idx1.plugins['p1@mp1'].activeSnapshot;
 
     fs.writeFileSync(path.join(pluginDir, 'commands', 'run.md'), 'second');
-    const r2 = await scanHostMarketplaces();
+    const r2 = await scanHostMarketplacesWithRetry();
     expect(r2.snapshotsCreated).toBe(1);
     const idx2 = readCatalogIndex();
     const snap2 = idx2.plugins['p1@mp1'].activeSnapshot;
@@ -352,11 +359,11 @@ describe('scanHostMarketplaces', () => {
       pluginManifest: { name: 'p1', version: '1.0.0' },
       files: { 'commands/run.md': 'v1' },
     });
-    await scanHostMarketplaces();
+    await scanHostMarketplacesWithRetry();
     const v1Snap = readCatalogIndex().plugins['p1@mp1'].activeSnapshot;
 
     fs.writeFileSync(path.join(pluginDir, 'commands', 'run.md'), 'v2');
-    await scanHostMarketplaces();
+    await scanHostMarketplacesWithRetry();
     const v2Snap = readCatalogIndex().plugins['p1@mp1'].activeSnapshot;
     expect(v2Snap).not.toBe(v1Snap);
 
@@ -364,7 +371,7 @@ describe('scanHostMarketplaces', () => {
     // the importer hits the skip path. activeSnapshot must still flip back
     // to the v1 hash.
     fs.writeFileSync(path.join(pluginDir, 'commands', 'run.md'), 'v1');
-    const report = await scanHostMarketplaces();
+    const report = await scanHostMarketplacesWithRetry();
     expect(report.snapshotsSkipped).toBe(1);
     expect(report.snapshotsCreated).toBe(0);
 
@@ -406,7 +413,7 @@ describe('scanHostMarketplaces', () => {
       { recursive: true, force: true },
     );
 
-    const r = await scanHostMarketplaces();
+    const r = await scanHostMarketplacesWithRetry();
     expect(r.warnings.length).toBeGreaterThan(0);
     expect(
       r.warnings.some((w) => w.includes('bad name')),
@@ -449,7 +456,7 @@ describe('scanHostMarketplaces', () => {
       );
     }
 
-    const r = await scanHostMarketplaces();
+    const r = await scanHostMarketplacesWithRetry();
 
     expect(r.pluginsScanned).toBe(1);
     for (const name of ['inline-placeholder', 'remote-url', 'remote-subdir']) {
@@ -480,7 +487,7 @@ describe('scanHostMarketplaces', () => {
       { recursive: true },
     );
 
-    const r = await scanHostMarketplaces();
+    const r = await scanHostMarketplacesWithRetry();
     expect(
       r.warnings.some(
         (w) => w.includes('orphan') && w.includes('plugin.json'),
@@ -496,8 +503,8 @@ describe('scanHostMarketplaces', () => {
       files: { 'commands/run.md': 'body' },
     });
     const [a, b] = await Promise.all([
-      scanHostMarketplaces(),
-      scanHostMarketplaces(),
+      scanHostMarketplacesWithRetry(),
+      scanHostMarketplacesWithRetry(),
     ]);
     expect(a).toBe(b);
     expect(a.snapshotsCreated + a.snapshotsSkipped).toBe(1);
@@ -506,7 +513,7 @@ describe('scanHostMarketplaces', () => {
   test('missing host root produces a warning, not a throw', async () => {
     // tmpHostDir exists but has no plugins/marketplaces subdir AND no
     // known_marketplaces.json — nothing to scan, but must warn not throw.
-    const r = await scanHostMarketplaces();
+    const r = await scanHostMarketplacesWithRetry();
     expect(r.marketplacesScanned).toBe(0);
     expect(r.warnings.length).toBeGreaterThan(0);
   });
@@ -530,7 +537,7 @@ describe('scanHostMarketplaces', () => {
       },
     });
 
-    const report = await scanHostMarketplaces();
+    const report = await scanHostMarketplacesWithRetry();
     expect(report.marketplacesScanned).toBe(1);
     expect(report.pluginsScanned).toBe(1);
     expect(report.snapshotsCreated).toBe(1);
@@ -558,7 +565,7 @@ describe('scanHostMarketplaces', () => {
     });
     seedKnownMarketplaces({ 'local-dir': { installLocation: mpDir } });
 
-    const report = await scanHostMarketplaces();
+    const report = await scanHostMarketplacesWithRetry();
     expect(report.marketplacesScanned).toBe(2);
     expect(report.pluginsScanned).toBe(2);
 
@@ -591,7 +598,7 @@ describe('scanHostMarketplaces', () => {
       },
     });
 
-    const report = await scanHostMarketplaces();
+    const report = await scanHostMarketplacesWithRetry();
     expect(report.marketplacesScanned).toBe(1);
     expect(report.pluginsScanned).toBe(1);
     expect(report.snapshotsCreated).toBe(1);
@@ -610,7 +617,7 @@ describe('scanHostMarketplaces', () => {
       files: { 'commands/run.md': 'body' },
     });
     // No seedKnownMarketplaces() → registry file absent. Must not warn or crash.
-    const report = await scanHostMarketplaces();
+    const report = await scanHostMarketplacesWithRetry();
     expect(report.marketplacesScanned).toBe(1);
     expect(report.pluginsScanned).toBe(1);
     expect(
@@ -627,7 +634,7 @@ describe('scanHostMarketplaces', () => {
     });
     seedKnownMarketplacesRaw('{ not valid json');
 
-    const report = await scanHostMarketplaces();
+    const report = await scanHostMarketplacesWithRetry();
     // marketplaces/ clone still imported despite the bad registry file.
     expect(report.pluginsScanned).toBe(1);
     expect(
@@ -648,7 +655,7 @@ describe('scanHostMarketplaces', () => {
     });
     seedKnownMarketplaces({ 'rel-mp': { installLocation: 'rel-mp' } });
 
-    const report = await scanHostMarketplaces();
+    const report = await scanHostMarketplacesWithRetry();
     expect(report.pluginsScanned).toBe(1);
     const idx = readCatalogIndex();
     expect(Object.keys(idx.plugins)).toEqual(['p-rel@rel-mp']);
@@ -683,7 +690,7 @@ describe('scanHostMarketplaces', () => {
       strEntry: 'oops',
     });
 
-    const report = await scanHostMarketplaces();
+    const report = await scanHostMarketplacesWithRetry();
     // Only the clone + 'good' import; the five malformed entries are skipped.
     expect(report.marketplacesScanned).toBe(2);
     expect(report.pluginsScanned).toBe(2);
@@ -711,7 +718,7 @@ describe('scanHostMarketplaces', () => {
       fileMp: { installLocation: filePath },
     });
 
-    const report = await scanHostMarketplaces();
+    const report = await scanHostMarketplacesWithRetry();
     // Both stale entries skipped; only the marketplaces/ clone imports.
     expect(report.marketplacesScanned).toBe(1);
     expect(report.pluginsScanned).toBe(1);
@@ -736,7 +743,7 @@ describe('scanHostMarketplaces', () => {
     });
     seedKnownMarketplacesRaw(JSON.stringify([{ installLocation: mpDir }]));
 
-    const report = await scanHostMarketplaces();
+    const report = await scanHostMarketplacesWithRetry();
     // Array registry ignored; only the marketplaces/ clone imports.
     expect(report.pluginsScanned).toBe(1);
     const idx = readCatalogIndex();

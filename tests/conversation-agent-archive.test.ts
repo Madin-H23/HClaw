@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { rmTempDirWithRetry } from './helpers/win-fs-retry.js';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-archive-test-'));
 const tmpStoreDir = path.join(tmpDir, 'db');
@@ -16,6 +17,7 @@ vi.mock('../src/config.js', async () => ({
 
 const {
   initDatabase,
+  closeDatabase,
   createAgent,
   getAgent,
   archiveInactiveConversationAgents,
@@ -57,8 +59,9 @@ beforeAll(() => {
   initDatabase();
 });
 
-afterAll(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+afterAll(async () => {
+  closeDatabase();
+  await rmTempDirWithRetry(tmpDir);
 });
 
 describe('archiveInactiveConversationAgents', () => {

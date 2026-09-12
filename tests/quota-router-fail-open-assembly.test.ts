@@ -39,6 +39,7 @@ import {
   type FakeQuotaTool,
   type QuotaQueryResult,
 } from './quota-router-stubs/fake-quota-tool.js';
+import { withFsRetry } from './helpers/win-fs-retry.js';
 
 const CONFIG_FILE = path.join(tmp, 'config', 'quota-router.json');
 const CRED_FILE = path.join(tmp, 'config', 'quota-router-credentials.json');
@@ -129,7 +130,7 @@ function assembleQuotaFilterPolicy(rig: {
   });
 }
 
-function buildRig(baseUrl: string) {
+async function buildRig(baseUrl: string) {
   fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
   fs.writeFileSync(
     CONFIG_FILE,
@@ -147,10 +148,12 @@ function buildRig(baseUrl: string) {
   const config = new QuotaRouterConfigLoader(CONFIG_FILE);
   const credentials = new QuotaCredentialStore(CRED_FILE);
   for (const id of Object.keys(MAPPING)) {
-    credentials.save(id, {
-      quotaToolProvider: MAPPING[id as keyof typeof MAPPING].quotaToolProvider,
-      credentials: { token: 'cred-for-' + id },
-    });
+    await withFsRetry(() =>
+      credentials.save(id, {
+        quotaToolProvider: MAPPING[id as keyof typeof MAPPING].quotaToolProvider,
+        credentials: { token: 'cred-for-' + id },
+      }),
+    );
   }
   const snapshots = new QuotaSnapshotStore(DB_PATH);
   openStores.push(snapshots);
@@ -168,7 +171,7 @@ describe('fail-open assembly over the real upstream selection loop', () => {
     const { baseUrl } = fixture;
     await fixture.stop();
     fixtures.length = 0;
-    const rig = buildRig(baseUrl);
+    const rig = await buildRig(baseUrl);
 
     const scripted = assembleQuotaFilterPolicy(rig);
     // 无快照：三次选路 = 纯 round-robin 全员轮转（与 no-op 策略逐一同）
@@ -213,7 +216,7 @@ describe('fail-open assembly over the real upstream selection loop', () => {
       }, // 紧张（未耗尽，保留）
     });
     fixtures.push(fixture);
-    const rig = buildRig(fixture.baseUrl);
+    const rig = await buildRig(fixture.baseUrl);
 
     const scripted = assembleQuotaFilterPolicy(rig);
     // 预热：把三家真实额度刷进快照库（async 装配在选路前完成）
@@ -241,7 +244,7 @@ describe('fail-open assembly over the real upstream selection loop', () => {
       opencode: { kind: 'success', result: afpResult(30) },
     });
     fixtures.push(fixture);
-    const rig = buildRig(fixture.baseUrl);
+    const rig = await buildRig(fixture.baseUrl);
     for (const id of Object.keys(MAPPING)) {
       await rig.refresher.getSnapshot(id);
     }
