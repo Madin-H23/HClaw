@@ -145,7 +145,20 @@ export function pickTightestWindowIndex(
   return best;
 }
 
-/** 汇总行统计（纯函数，测试钉死）：总数 + 四档计数 + 最紧供应商（剩余分最小） */
+/** 档位严重度序（复核 P2-1）：数值越小越紧，跨量纲裁决先看档位再看分值 */
+const TIER_SEVERITY: Record<QuotaTier, number> = {
+  exhausted: 0,
+  critical: 1,
+  tight: 2,
+  plenty: 3,
+};
+
+/**
+ * 汇总行统计（纯函数，测试钉死）：总数 + 四档计数 + 最紧供应商。
+ * 最紧裁决档位严重度优先（exhausted > critical > tight > plenty），同档内
+ * 再比剩余分——score 跨量纲（占比 % 与美元余额不可直接比，$7 的紧张
+ * 不该压过 8% 的临界），先按档位对齐量纲再比较。
+ */
 export function summarizeTiers(providers: readonly QuotaPanelProviderRow[]): {
   total: number;
   counts: Record<QuotaTier, number>;
@@ -158,10 +171,18 @@ export function summarizeTiers(providers: readonly QuotaPanelProviderRow[]): {
     exhausted: 0,
   };
   let tightest: QuotaPanelProviderRow | null = null;
+  let tightestSeverity = Number.POSITIVE_INFINITY;
   let tightestScore = Number.POSITIVE_INFINITY;
   for (const p of providers) {
     if (p.tier) counts[p.tier] += 1;
-    if (p.tier && p.score !== null && p.score < tightestScore) {
+    if (!p.tier || p.score === null) continue;
+    const severity = TIER_SEVERITY[p.tier];
+    if (
+      tightest === null ||
+      severity < tightestSeverity ||
+      (severity === tightestSeverity && p.score < tightestScore)
+    ) {
+      tightestSeverity = severity;
       tightestScore = p.score;
       tightest = p;
     }
@@ -362,6 +383,8 @@ function windowDetailText(w: QuotaWindow): string {
 /**
  * 窗口明细（U1 折叠交互）：多窗口时默认只展示最紧一窗（剩余占比最小，
  * 与表盘弧长同源），其余收进「展开其余 N 窗」；单窗口/无窗口不出现开关。
+ * 「（最紧）」标注按窗口本体判定（复核 P2-3：跨展开态保留）；最紧窗口
+ * 不可折算（回退下标 0，复核 P2-4）时不加标注。
  */
 function WindowDetails({ row }: { row: QuotaPanelProviderRow }) {
   const [expanded, setExpanded] = useState(false);
@@ -388,17 +411,22 @@ function WindowDetails({ row }: { row: QuotaPanelProviderRow }) {
   const tightestIndex = collapsible
     ? pickTightestWindowIndex(windows, row.signalKind)
     : 0;
-  const visible = collapsible && !expanded ? [windows[tightestIndex]] : windows;
+  const tightestWindow = windows[tightestIndex];
+  // 回退路径（全部窗口均不可折算占比）不算真最紧，不加标注
+  const hasTightest =
+    collapsible && windowRemainPct(tightestWindow, row.signalKind) !== null;
+  const detailId = `quota-windows-${row.providerId}`;
+  const visible = collapsible && !expanded ? [tightestWindow] : windows;
   return (
     <div className="mt-2">
-      <div className="flex flex-wrap gap-x-4 gap-y-1">
+      <div id={detailId} className="flex flex-wrap gap-x-4 gap-y-1">
         {visible.map((w, index) => (
           <span
             key={`${w.label}-${index}`}
             className="text-xs text-muted-foreground"
           >
             {w.label || '窗口'}：{windowDetailText(w)}
-            {collapsible && !expanded && index === 0 && (
+            {hasTightest && w === tightestWindow && (
               <span className="text-foreground/70">（最紧）</span>
             )}
           </span>
@@ -409,6 +437,7 @@ function WindowDetails({ row }: { row: QuotaPanelProviderRow }) {
           type="button"
           data-testid="quota-windows-toggle"
           aria-expanded={expanded}
+          aria-controls={detailId}
           onClick={() => setExpanded((v) => !v)}
           className="mt-1 inline-flex items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >

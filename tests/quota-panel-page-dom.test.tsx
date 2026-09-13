@@ -587,6 +587,10 @@ describe('U1 汇总行 / 炉心温度计表盘 / 窗口折叠', () => {
       '[data-testid="quota-windows-toggle"]',
     );
     expect(toggle!.getAttribute('aria-expanded')).toBe('false');
+    // aria-controls 关联明细容器（P2-5）
+    const detailId = toggle!.getAttribute('aria-controls');
+    expect(detailId).toBe('quota-windows-minimax-ab');
+    expect(card().querySelector(`#${detailId}`)).not.toBeNull();
     expect(toggle!.textContent).toContain('展开其余 2 窗');
     // 单窗口供应商不出现开关
     expect(
@@ -594,11 +598,12 @@ describe('U1 汇总行 / 炉心温度计表盘 / 窗口折叠', () => {
         '[data-testid="quota-card-zhipu-glm"] [data-testid="quota-windows-toggle"]',
       ),
     ).toBeNull();
-    // 展开：三窗齐全；再点收起
+    // 展开：三窗齐全，「（最紧）」标注跟随最紧窗口本体保留（P2-3）；再点收起
     await clickToggle();
     expect(card().textContent).toContain('5h 窗口');
     expect(card().textContent).toContain('周窗口');
     expect(card().textContent).toContain('月度包');
+    expect(card().textContent).toContain('（最紧）');
     expect(
       card()
         .querySelector('[data-testid="quota-windows-toggle"]')
@@ -614,6 +619,50 @@ describe('U1 汇总行 / 炉心温度计表盘 / 窗口折叠', () => {
         .querySelector('[data-testid="quota-windows-toggle"]')
         ?.getAttribute('aria-expanded'),
     ).toBe('false');
+  });
+
+  test('窗口全不可折算占比 → 折叠开关仍在但不加「（最紧）」标注（P2-4）', async () => {
+    mocks.fetchQuotaPanel.mockResolvedValue({
+      configured: true,
+      snapshotTtlMs: 300_000,
+      providers: [
+        rowFixture({
+          // 两窗都只有 total、无 remaining/percentage → 无法折算占比
+          providerId: 'opaque-src',
+          displayName: 'Opaque Src',
+          signalKind: 'absolute',
+          score: 40,
+          windows: [
+            {
+              label: '窗口甲',
+              total: 100,
+              used: null,
+              remaining: null,
+              percentage: null,
+              resetAt: null,
+              unit: '',
+            },
+            {
+              label: '窗口乙',
+              total: 200,
+              used: null,
+              remaining: null,
+              percentage: null,
+              resetAt: null,
+              unit: '',
+            },
+          ],
+        }),
+      ],
+    });
+    await renderPanel();
+    const card = () =>
+      container!.querySelector('[data-testid="quota-card-opaque-src"]')!;
+    expect(
+      card().querySelector('[data-testid="quota-windows-toggle"]'),
+    ).not.toBeNull();
+    expect(card().textContent).toContain('窗口甲');
+    expect(card().textContent).not.toContain('（最紧）');
   });
 
   test('最紧窗口裁决与汇总统计（纯函数钉死）', () => {
@@ -647,7 +696,7 @@ describe('U1 汇总行 / 炉心温度计表盘 / 窗口折叠', () => {
     ).toBe(1);
     // 均不可折算 → 回退首窗
     expect(pickTightestWindowIndex([win({ label: 'x' })], null)).toBe(0);
-    // 汇总统计：同分并列取先出现者；未知档位不入四档计数
+    // 汇总统计：同档同分并列取先出现者；未知档位不入四档计数
     const a = rowFixture({ score: 10 });
     const b = rowFixture({ providerId: 'b', displayName: '乙', score: 10 });
     const unknown = rowFixture({
@@ -661,5 +710,36 @@ describe('U1 汇总行 / 炉心温度计表盘 / 窗口折叠', () => {
     expect(stats.total).toBe(3);
     expect(stats.counts.plenty).toBe(2);
     expect(stats.tightest).toBe(a);
+    // 跨量纲裁决（P2-1）：档位严重度优先——critical 8% 压过 tight $7，
+    // 美元余额与剩余占比不可直接比较
+    const tightCurrency = rowFixture({
+      providerId: 'd',
+      displayName: '丁',
+      tier: 'tight',
+      tierLabel: '紧张',
+      signalKind: 'currency',
+      score: 7,
+    });
+    const criticalPct = rowFixture({
+      providerId: 'e',
+      displayName: '戊',
+      tier: 'critical',
+      tierLabel: '临界',
+      signalKind: 'percentage',
+      score: 8,
+    });
+    expect(summarizeTiers([tightCurrency, criticalPct]).tightest).toBe(
+      criticalPct,
+    );
+    // 同档内再比 score：两个 tight 取分低者
+    const tightLow = rowFixture({
+      providerId: 'f',
+      displayName: '己',
+      tier: 'tight',
+      tierLabel: '紧张',
+      signalKind: 'percentage',
+      score: 5,
+    });
+    expect(summarizeTiers([tightCurrency, tightLow]).tightest).toBe(tightLow);
   });
 });
