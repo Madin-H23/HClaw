@@ -95,8 +95,7 @@ function CredentialBadges({ provider }: { provider: ProviderWithHealth }) {
   if (provider.hasClaudeCodeOauthToken) {
     badges.push({
       label: 'Setup Token',
-      color:
-        'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+      color: 'bg-brand-50 text-brand-700 border-brand-200',
     });
   }
   if (provider.hasAnthropicApiKey) {
@@ -198,7 +197,7 @@ export function ProviderList({
                       <span
                         className={`text-[11px] px-1.5 py-0.5 rounded shrink-0 ${
                           provider.type === 'official'
-                            ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
+                            ? 'bg-brand-100 text-brand-700'
                             : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
                         }`}
                       >
@@ -217,8 +216,21 @@ export function ProviderList({
                         checked={provider.enabled}
                         disabled={disabled || toggling || deleting || isDefault}
                         onCheckedChange={() => onToggle(provider)}
+                        // UI-U2 细节修缮：默认配置的开关是 disabled+checked，
+                        // opacity-50 让「on」读成另一种色感（体检记录的
+                        // 一橙一红）——色源本就统一为 bg-primary（Switch
+                        // 单源、无覆写），这里补锁因提示消除语义歧义。
+                        title={
+                          isDefault
+                            ? '默认模型配置不可停用，可先将另一配置设为默认'
+                            : undefined
+                        }
                         aria-label={
-                          provider.enabled ? '禁用模型配置' : '启用模型配置'
+                          isDefault
+                            ? '默认模型配置（不可停用）'
+                            : provider.enabled
+                              ? '禁用模型配置'
+                              : '启用模型配置'
                         }
                       />
                       {provider.enabled && !isDefault && (

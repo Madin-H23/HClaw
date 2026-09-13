@@ -26,6 +26,37 @@ function taskTitle(task: ScheduledTask): string {
   );
 }
 
+/** UI-U2 细节修缮：统计行分组化——原「当前 0 · 0 已启用 · …」串联文本
+ *  改为语义色点分段徽标（色点：启用=success、暂停/重试=warning、
+ *  执行中=brand 脉动、当前/回收站=中性）。 */
+function TaskStatChip({
+  label,
+  value,
+  dot,
+  pulse = false,
+}: {
+  label: string;
+  value: number;
+  dot: string;
+  pulse?: boolean;
+}) {
+  return (
+    <span
+      role="listitem"
+      className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground"
+    >
+      <span
+        aria-hidden="true"
+        className={`w-1.5 h-1.5 shrink-0 rounded-full ${dot}${
+          pulse ? ' animate-pulse motion-reduce:animate-none' : ''
+        }`}
+      />
+      <span>{label}</span>
+      <span className="font-medium tabular-nums text-foreground">{value}</span>
+    </span>
+  );
+}
+
 export function TasksPage() {
   const {
     tasks,
@@ -412,8 +443,7 @@ export function TasksPage() {
       <div className="mx-auto max-w-6xl p-4 sm:p-6">
         <PageHeader
           title="定时任务管理"
-          subtitle={`当前 ${liveTasks.length} · ${enabledTasks.length} 已启用 · ${pausedTasks.length} 已暂停 · ${liveRunCount} 执行中${retryingCount > 0 ? ` · ${retryingCount} 等待重试` : ''} · 回收站 ${deletedTasks.length}`}
-          className="mb-5 flex-col !items-stretch [&>div:first-child]:w-full [&>div:last-child]:justify-end sm:flex-row sm:!items-center sm:[&>div:first-child]:w-auto"
+          className="mb-2.5 flex-col !items-stretch [&>div:first-child]:w-full [&>div:last-child]:justify-end sm:flex-row sm:!items-center sm:[&>div:first-child]:w-auto"
           actions={
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <Button variant="outline" onClick={loadTasks} disabled={loading}>
@@ -427,6 +457,45 @@ export function TasksPage() {
             </div>
           }
         />
+        <div
+          role="list"
+          aria-label="任务统计"
+          className="mb-5 flex flex-wrap items-center gap-1.5"
+        >
+          <TaskStatChip
+            label="当前"
+            value={liveTasks.length}
+            dot="bg-muted-foreground/40"
+          />
+          <TaskStatChip
+            label="已启用"
+            value={enabledTasks.length}
+            dot="bg-success"
+          />
+          <TaskStatChip
+            label="已暂停"
+            value={pausedTasks.length}
+            dot="bg-warning"
+          />
+          <TaskStatChip
+            label="执行中"
+            value={liveRunCount}
+            dot="bg-brand-500"
+            pulse
+          />
+          {retryingCount > 0 && (
+            <TaskStatChip
+              label="等待重试"
+              value={retryingCount}
+              dot="bg-warning"
+            />
+          )}
+          <TaskStatChip
+            label="回收站"
+            value={deletedTasks.length}
+            dot="bg-muted-foreground/40"
+          />
+        </div>
 
         {error && (
           <div
