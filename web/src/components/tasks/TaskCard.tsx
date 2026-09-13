@@ -85,13 +85,13 @@ export function TaskCard({
       return 'bg-muted text-muted-foreground';
     }
     if (effectiveRunning) {
-      return 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300';
+      return 'bg-brand-100 text-brand-600';
     }
     switch (task.status) {
       case 'active':
         return 'bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400';
       case 'parsing':
-        return 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400';
+        return 'bg-brand-100 text-brand-600';
       case 'paused':
         return 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400';
       case 'completed':
@@ -159,7 +159,7 @@ export function TaskCard({
             {/* Badges */}
             <div className="flex flex-wrap items-center gap-1.5 mb-2">
               {task.execution_type === 'script' && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-brand-700">
                   脚本
                 </span>
               )}

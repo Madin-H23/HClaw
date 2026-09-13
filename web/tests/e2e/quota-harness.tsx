@@ -6,7 +6,7 @@
  * 不依赖真实后端。运行方式见 web/tests/e2e/quota-shots.spec.ts。
  *
  * 视图：
- *   ?view=panel&state=all-tiers|missing|stale|unconfigured|loading
+ *   ?view=panel&state=all-tiers|missing|stale|unconfigured|all-missing|loading
  *   ?view=cards&cards=downgrade|veto|allow|all
  */
 import { createRoot } from 'react-dom/client';
@@ -189,6 +189,45 @@ const FOUR_TIERS: MockProvider[] = [
     summary: [{ label: '总余额', value: 12.5 }],
   },
   {
+    // U1 折叠演示：三窗口，剩余占比 80/45/30 → 最紧为「月度包」（第三窗）
+    providerId: 'minimax-ab',
+    displayName: 'MiniMax AB',
+    mapped: true,
+    tier: 'plenty',
+    signalKind: 'absolute',
+    score: 30,
+    fetchedAgoMs: minutes(5),
+    windows: [
+      {
+        label: '5h 窗口',
+        total: 300_000,
+        used: 60_000,
+        remaining: 240_000,
+        percentage: 20,
+        resetAt: isoAgo(-minutes(110)),
+        unit: ' tokens',
+      },
+      {
+        label: '周窗口',
+        total: 2_000_000,
+        used: 1_100_000,
+        remaining: 900_000,
+        percentage: 55,
+        resetAt: isoAgo(-minutes(60 * 24 * 5)),
+        unit: ' tokens',
+      },
+      {
+        label: '月度包',
+        total: 10_000_000,
+        used: 7_000_000,
+        remaining: 3_000_000,
+        percentage: 70,
+        resetAt: isoAgo(-minutes(60 * 24 * 18)),
+        unit: ' tokens',
+      },
+    ],
+  },
+  {
     providerId: 'command-code',
     displayName: 'Command Code',
     mapped: true,
@@ -237,6 +276,20 @@ const PANEL_STATES: Record<string, QuotaPanelResponse> = {
       ...p,
       mapped: false,
       tier: undefined,
+    })).map(toRow),
+  },
+  // U1 汇总行降级形态：已配置但全池无快照 → 「暂无档位数据」+ 虚线表盘
+  'all-missing': {
+    configured: true,
+    snapshotTtlMs: 5 * 60_000,
+    providers: FOUR_TIERS.map((p) => ({
+      ...p,
+      tier: undefined,
+      signalKind: undefined,
+      score: undefined,
+      windows: undefined,
+      summary: undefined,
+      fetchedAgoMs: undefined,
     })).map(toRow),
   },
 };

@@ -130,37 +130,37 @@ function TaskAgentBlock({
   }, [activeToolIdSignature, agent.id]);
 
   const borderColor = isRunning
-    ? 'border-blue-200/60 dark:border-blue-700/40'
+    ? 'border-brand-200/60'
     : agent.status === 'error'
       ? 'border-red-200/60 dark:border-red-700/40'
       : 'border-emerald-200/60 dark:border-emerald-700/40';
   const bgColor = isRunning
-    ? 'bg-blue-50/40 dark:bg-blue-950/30'
+    ? 'bg-brand-50/40'
     : agent.status === 'error'
       ? 'bg-red-50/40 dark:bg-red-950/30'
       : 'bg-emerald-50/40 dark:bg-emerald-950/30';
   const hoverBg = isRunning
-    ? 'hover:bg-blue-50/60 dark:hover:bg-blue-900/30'
+    ? 'hover:bg-brand-50/60'
     : agent.status === 'error'
       ? 'hover:bg-red-50/60 dark:hover:bg-red-900/30'
       : 'hover:bg-emerald-50/60 dark:hover:bg-emerald-900/30';
   const dotColor = isRunning
-    ? 'bg-blue-500 animate-pulse'
+    ? 'bg-brand-500 animate-pulse'
     : agent.status === 'error'
       ? 'bg-red-500'
       : 'bg-emerald-500';
   const textColor = isRunning
-    ? 'text-blue-700 dark:text-blue-300'
+    ? 'text-brand-700'
     : agent.status === 'error'
       ? 'text-red-700 dark:text-red-300'
       : 'text-emerald-700 dark:text-emerald-300';
   const chevronColor = isRunning
-    ? 'text-blue-400 dark:text-blue-500'
+    ? 'text-brand-400'
     : agent.status === 'error'
       ? 'text-red-400 dark:text-red-500'
       : 'text-emerald-400 dark:text-emerald-500';
   const contentBorderColor = isRunning
-    ? 'border-blue-100 dark:border-blue-800/50'
+    ? 'border-brand-100'
     : agent.status === 'error'
       ? 'border-red-100 dark:border-red-800/50'
       : 'border-emerald-100 dark:border-emerald-800/50';
@@ -198,12 +198,12 @@ function TaskAgentBlock({
           {isRunning && streaming && (
             <>
               {streaming.isThinking && (
-                <p className="text-[13px] text-blue-500 dark:text-blue-400 italic flex items-center gap-1">
+                <p className="text-[13px] text-brand-500 italic flex items-center gap-1">
                   思考中
                   <span className="flex gap-0.5 ml-0.5">
-                    <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                    <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                    <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" />
+                    <span className="w-1 h-1 bg-brand-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                    <span className="w-1 h-1 bg-brand-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                    <span className="w-1 h-1 bg-brand-400 rounded-full animate-bounce" />
                   </span>
                 </p>
               )}
@@ -274,7 +274,7 @@ function SdkTaskRuntimeBlock({
         className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors"
       >
         <span
-          className={`w-2 h-2 rounded-full ${isRunning ? 'bg-blue-500 animate-pulse' : task.status === 'error' ? 'bg-red-500' : 'bg-emerald-500'}`}
+          className={`w-2 h-2 rounded-full ${isRunning ? 'bg-brand-500 animate-pulse' : task.status === 'error' ? 'bg-red-500' : 'bg-emerald-500'}`}
         />
         <span className="text-xs font-medium text-foreground truncate">
           {task.title}
@@ -987,8 +987,8 @@ export function StreamingDisplay({
         aria-label={`${senderName}正在处理`}
         className={
           isCompact
-            ? 'mb-2 flex min-h-10 items-center gap-2 border-b border-border pb-2 text-sm text-muted-foreground'
-            : 'mx-auto flex min-h-10 w-full max-w-4xl items-center gap-2 px-4 py-2 text-sm text-muted-foreground lg:pl-[60px]'
+            ? 'hc-enter-card mb-2 flex min-h-10 items-center gap-2 border-b border-border pb-2 text-sm text-muted-foreground'
+            : 'hc-enter-card mx-auto flex min-h-10 w-full max-w-4xl items-center gap-2 px-4 py-2 text-sm text-muted-foreground lg:pl-[60px]'
         }
       >
         <Loader2
@@ -1026,7 +1026,7 @@ export function StreamingDisplay({
   if (isWaiting && !hasStreamData) {
     if (isCompact) {
       return (
-        <div className="mb-2 border-b border-border pb-2">
+        <div className="hc-enter-card mb-2 border-b border-border pb-2">
           <div className="flex items-center gap-1.5 mb-1">
             <span className="text-xs font-semibold text-primary">
               {senderName}
@@ -1047,7 +1047,7 @@ export function StreamingDisplay({
       );
     }
     return (
-      <div className="max-w-4xl mx-auto w-full px-4 py-3">
+      <div className="hc-enter-card max-w-4xl mx-auto w-full px-4 py-3">
         {/* Mobile: compact avatar + name row */}
         <div className="flex items-center gap-2 mb-1.5 lg:hidden">
           <EmojiAvatar
@@ -1104,7 +1104,7 @@ export function StreamingDisplay({
   // ── Compact mode streaming ──
   if (isCompact) {
     return (
-      <div className="mb-2 border-b border-border pb-2">
+      <div className="hc-enter-card mb-2 border-b border-border pb-2">
         {/* Sender line */}
         <div className="flex items-center gap-1.5 mb-1">
           <span className="text-xs font-semibold text-primary">
@@ -1150,7 +1150,7 @@ export function StreamingDisplay({
 
   // ── Chat mode streaming (default) ──
   return (
-    <div className="max-w-4xl mx-auto w-full px-4 py-3">
+    <div className="hc-enter-card max-w-4xl mx-auto w-full px-4 py-3">
       {/* Mobile: compact avatar + name row */}
       <div className="flex items-center gap-2 mb-1.5 lg:hidden">
         <EmojiAvatar

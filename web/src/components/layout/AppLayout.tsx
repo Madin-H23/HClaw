@@ -176,7 +176,13 @@ export function AppLayout() {
           }`}
         >
           <ErrorBoundary resetKeys={[location.pathname]}>
-            <Outlet />
+            {/* UI-U2 路由切换入场过渡：keyed 容器随 pathname 重挂载，播放
+                hc-enter-page（fade+4px 上移，motion-normal）。h-full 维持
+                页面 min-h-full/h-full 的百分比高度解析基准与 main 的滚动
+                语义（内容超出时 overflow 仍归 main 滚动）。 */}
+            <div key={location.pathname} className="h-full hc-enter-page">
+              <Outlet />
+            </div>
           </ErrorBoundary>
         </main>
       </div>

@@ -388,7 +388,7 @@ export const MessageBubble = memo(
                     <span
                       className={`px-1.5 py-0.5 text-[10px] rounded-full font-medium ${
                         exceededWindow === 'daily'
-                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                          ? 'bg-brand-100 text-brand-700'
                           : exceededWindow === 'weekly'
                             ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'
                             : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
