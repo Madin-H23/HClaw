@@ -48,7 +48,7 @@ export function SkillCard({ skill, selected, onSelect }: SkillCardProps) {
               {SKILL_SOURCE_LABELS[skill.source]}
             </span>
             {skill.userInvocable && (
-              <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+              <span className="px-2 py-0.5 rounded text-xs font-medium bg-brand-100 text-brand-700">
                 可调用
               </span>
             )}

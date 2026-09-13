@@ -68,14 +68,14 @@ export function McpServerCard({
             <span
               className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
                 server.source === 'system'
-                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'
+                  ? 'bg-brand-100 text-brand-700'
                   : 'bg-muted text-muted-foreground'
               }`}
             >
               {server.source === 'system' ? '系统' : '我的'}
             </span>
             {isHttpType && (
-              <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+              <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-brand-100 text-brand-700">
                 {server.type?.toUpperCase()}
               </span>
             )}

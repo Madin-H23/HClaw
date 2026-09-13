@@ -148,7 +148,7 @@ function FileIcon({ name }: { name: string }) {
     return <Package className="w-4 h-4 text-amber-500" />;
   if (ext === 'pdf') return <FileText className="w-4 h-4 text-red-500" />;
   if (ext === 'json') return <FileCode className="w-4 h-4 text-yellow-600" />;
-  if (ext === 'md') return <FileText className="w-4 h-4 text-blue-500" />;
+  if (ext === 'md') return <FileText className="w-4 h-4 text-primary" />;
   if (CODE_EXTENSIONS.has(ext))
     return <FileCode className="w-4 h-4 text-emerald-500" />;
   if (TEXT_EXTENSIONS.has(ext))
