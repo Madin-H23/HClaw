@@ -156,7 +156,7 @@ export function McpServerDetail({ server, onDeleted }: McpServerDetailProps) {
             <span
               className={`rounded px-2 py-0.5 text-xs ${
                 server.source === 'system'
-                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'
+                  ? 'bg-brand-100 text-brand-700'
                   : 'bg-muted text-muted-foreground'
               }`}
             >

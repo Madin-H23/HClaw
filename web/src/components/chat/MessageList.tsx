@@ -83,6 +83,29 @@ const quickPrompts = [
   { icon: Wrench, title: '调试问题', desc: '帮我定位和修复一个 Bug' },
 ];
 
+/** 与 virtualizer getItemKey 同源的条目键（UI-U2 入场动画判定复用）。 */
+function flatItemKey(item: FlatItem, index: number): string {
+  switch (item.type) {
+    case 'date':
+      return `date-${item.content}`;
+    case 'divider':
+      return `div-${index}`;
+    case 'spawn':
+      return `spawn-${index}`;
+    case 'error':
+      return `err-${index}`;
+    case 'message':
+      return item.content.id;
+  }
+}
+
+// UI-U2 消息/卡片入场动画（hc-enter-card）判定口径：只对「尾部小批量追加」
+// 播放入场——历史首次灌入、loadMore 头部前插、断线重连的批量回填一律不动画，
+// 避免初始载入闪动与滚动锚定扰动。单次追加超过 APPEND_ANIM_MAX 条视为批量
+// 回填（非对话节奏的「新消息」），同样跳过。
+const APPEND_ANIM_MAX = 3;
+const EMPTY_STRING_SET: ReadonlySet<string> = new Set<string>();
+
 export function MessageList({
   messages,
   loading,
@@ -151,6 +174,15 @@ export function MessageList({
   const [autoScroll, setAutoScroll] = useState(true);
   const [atTop, setAtTop] = useState(false);
   const prevMessageCount = useRef(timelineMessages.length);
+  // UI-U2 入场动画判定基准：上一次已提交渲染的条目键集合与条目数。
+  const prevItemKeysRef = useRef<Set<string> | null>(null);
+  const prevItemCountRef = useRef(0);
+  // 入场键结果按 flatMessages 引用缓存：动画播放期间的其它重渲染（如
+  // 自动滚动的 setState）不会重算并撤掉动画类，动画不被中途打断。
+  const enterKeysCacheRef = useRef<{
+    source: FlatItem[];
+    keys: ReadonlySet<string>;
+  } | null>(null);
   // Window during which the scroll handler ignores updates and the streaming
   // RAF skips its catch-up scroll, so a user-initiated smooth scroll can run
   // uninterrupted (≈500ms browser default + 100ms slack).
@@ -240,6 +272,36 @@ export function MessageList({
     return items;
   }, [timelineMessages, hasWorkflowCard]);
 
+  // UI-U2 入场键判定：对比上一次已提交渲染的键集合，识别「尾部小批量追加」
+  // 的新条目（新消息/系统提示卡片）。结果按 flatMessages 引用缓存，动画
+  // 播放期间的无关重渲染不会重算（类中途被撤会打断动画）。
+  const enterAnimKeys = useMemo<ReadonlySet<string>>(() => {
+    const cached = enterKeysCacheRef.current;
+    if (cached && cached.source === flatMessages) return cached.keys;
+    const prev = prevItemKeysRef.current;
+    let keys: ReadonlySet<string> = EMPTY_STRING_SET;
+    if (prev) {
+      const fresh = new Set<string>();
+      for (let i = prevItemCountRef.current; i < flatMessages.length; i++) {
+        const item = flatMessages[i];
+        if (!item || item.type === 'date') continue;
+        const key = flatItemKey(item, i);
+        if (!prev.has(key)) fresh.add(key);
+      }
+      if (fresh.size > 0 && fresh.size <= APPEND_ANIM_MAX) keys = fresh;
+    }
+    enterKeysCacheRef.current = { source: flatMessages, keys };
+    return keys;
+  }, [flatMessages]);
+
+  // 提交后更新入场判定基准（渲染期只读，StrictMode 双渲染口径一致）。
+  useEffect(() => {
+    prevItemKeysRef.current = new Set(
+      flatMessages.map((item, index) => flatItemKey(item, index)),
+    );
+    prevItemCountRef.current = flatMessages.length;
+  }, [flatMessages]);
+
   // Chat always starts at bottom — no scroll position restoration.
   // key={...} on <MessageList> guarantees a fresh mount on group/tab switch.
   const virtualizer = useVirtualizer({
@@ -249,18 +311,7 @@ export function MessageList({
     getItemKey: (index) => {
       const item = flatMessages[index];
       if (!item) return index;
-      switch (item.type) {
-        case 'date':
-          return `date-${item.content}`;
-        case 'divider':
-          return `div-${index}`;
-        case 'spawn':
-          return `spawn-${index}`;
-        case 'error':
-          return `err-${index}`;
-        case 'message':
-          return item.content.id;
-      }
+      return flatItemKey(item, index);
     },
     estimateSize: (index) => {
       const item = flatMessages[index];
@@ -543,7 +594,13 @@ export function MessageList({
                       transform: `translateY(${virtualItem.start}px)`,
                     }}
                   >
-                    <div className="flex items-center gap-3 my-6 px-4">
+                    <div
+                      className={`flex items-center gap-3 my-6 px-4${
+                        enterAnimKeys.has(String(virtualItem.key))
+                          ? ' hc-enter-card'
+                          : ''
+                      }`}
+                    >
                       <div className="flex-1 border-t border-amber-300" />
                       <span className="text-xs text-amber-600 whitespace-pre-wrap">
                         {item.content}
@@ -568,7 +625,13 @@ export function MessageList({
                       transform: `translateY(${virtualItem.start}px)`,
                     }}
                   >
-                    <div className="flex items-center gap-2 my-4 px-4">
+                    <div
+                      className={`flex items-center gap-2 my-4 px-4${
+                        enterAnimKeys.has(String(virtualItem.key))
+                          ? ' hc-enter-card'
+                          : ''
+                      }`}
+                    >
                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-50 dark:bg-violet-950/40 text-xs text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-800">
                         <span>⚡</span>
                         <span className="font-medium">并行任务</span>
@@ -598,7 +661,13 @@ export function MessageList({
                       transform: `translateY(${virtualItem.start}px)`,
                     }}
                   >
-                    <div className="flex items-center gap-3 my-6 px-4">
+                    <div
+                      className={`flex items-center gap-3 my-6 px-4${
+                        enterAnimKeys.has(String(virtualItem.key))
+                          ? ' hc-enter-card'
+                          : ''
+                      }`}
+                    >
                       <div className="flex-1 border-t border-red-300" />
                       <span className="text-xs text-red-600 whitespace-pre-wrap flex items-center gap-1">
                         <AlertTriangle size={14} />
@@ -626,18 +695,28 @@ export function MessageList({
                   ref={virtualizer.measureElement}
                   data-index={virtualItem.index}
                 >
-                  <ErrorBoundary>
-                    <MessageBubble
-                      message={message}
-                      showTime={showTime}
-                      thinkingContent={thinkingCache[message.id]}
-                      thinkingDurationMs={thinkingDurationCache[message.id]}
-                      agentName={agentIdentity.name}
-                      agentAvatarUrl={agentAvatarUrl}
-                      agentAvatarEmoji={agentAvatarEmoji}
-                      agentAvatarColor={agentAvatarColor}
-                    />
-                  </ErrorBoundary>
+                  {/* UI-U2：新消息入场（fade+up，motion-enter）。挂在虚拟条目
+                      内层——外层定位容器的 inline transform 不能被动画覆盖。 */}
+                  <div
+                    className={
+                      enterAnimKeys.has(String(virtualItem.key))
+                        ? 'hc-enter-card'
+                        : undefined
+                    }
+                  >
+                    <ErrorBoundary>
+                      <MessageBubble
+                        message={message}
+                        showTime={showTime}
+                        thinkingContent={thinkingCache[message.id]}
+                        thinkingDurationMs={thinkingDurationCache[message.id]}
+                        agentName={agentIdentity.name}
+                        agentAvatarUrl={agentAvatarUrl}
+                        agentAvatarEmoji={agentAvatarEmoji}
+                        agentAvatarColor={agentAvatarColor}
+                      />
+                    </ErrorBoundary>
+                  </div>
                 </div>
               );
             })}

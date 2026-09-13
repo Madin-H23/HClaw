@@ -3,6 +3,10 @@ import { CHANNEL_LABELS } from '../../channel-registry';
 // ADR-0009：显示名从渠道注册表派生（原为手写七渠道 Record）
 export const CHANNEL_LABEL: Record<string, string> = CHANNEL_LABELS;
 
+// 渠道徽标色 = 各渠道第三方品牌色语义（UI-U2 色板收敛口径豁免）：
+// feishu 蓝=飞书品牌蓝、telegram 天蓝、qq 紫、dingtalk 青、discord 靛——
+// 这些是渠道身份色而非状态语义，不随炉心色板收敛；全前端唯一保留的
+// blue-* 用法即此处 feishu（grep 审查口径：链接色/第三方语义除外）。
 export const CHANNEL_COLORS: Record<string, string> = {
   feishu: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
   telegram: 'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300',

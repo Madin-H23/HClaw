@@ -204,6 +204,21 @@
   --error: #dc2626;
   --error-bg: #fee2e2;
 
+  /* Motion tokens — 全站动效单源（UI-U2）。
+     duration：fast=微交互反馈（按压/悬停）、normal=常规过渡与路由页入场、
+     enter=内容入场（消息/卡片）、slow=大型面板与强调过渡。
+     easing：standard=常规过渡（与既有 transition 曲线一致）、
+     enter=入场减速曲线（快起缓停，内容「落定」感）。
+     引用方式：CSS 内 var() 直引；TSX 内 Tailwind arbitrary values
+     （如 duration-[var(--motion-normal)] ease-[var(--ease-enter)]）或下方
+     .hc-enter-* 语义类。新增动效禁止散落 duration 数字。 */
+  --motion-fast: 120ms;
+  --motion-normal: 200ms;
+  --motion-slow: 300ms;
+  --motion-enter: 150ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+
   /* Elevated surface — cards that need to stand out from page background */
   --surface: #ffffff;
 
@@ -600,6 +615,40 @@ html.font-anthropic .font-mono {
   .animate-\[float_4s_ease-in-out_infinite\],
   .animate-\[orbit_6s_linear_infinite\] {
     animation: none !important;
+  }
+}
+
+/* =====================================================
+   UI-U2 入场动效语义类 —— 引用上方 motion tokens（单源）。
+   hc-enter-page：路由页切换入场（motion-normal 200ms）；
+   hc-enter-card：消息/系统提示卡片入场（motion-enter 150ms）。
+   fill-mode 用 backwards：动画结束后不残留 transform，避免为
+   fixed/sticky 后代建立持久 containing block（transform 仅存在于
+   动画进行期）。下方全局 reduce 兜底之外再挂显式 reduce 分支。
+   ===================================================== */
+@keyframes hc-enter-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hc-enter-page {
+  animation: hc-enter-up var(--motion-normal) var(--ease-enter) backwards;
+}
+
+.hc-enter-card {
+  animation: hc-enter-up var(--motion-enter) var(--ease-enter) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-enter-page,
+  .hc-enter-card {
+    animation: none;
   }
 }
 
@@ -1137,8 +1186,19 @@ pre code.hljs {
   }
 }
 
-/* Aurora keyframes 只 animate transform（composite layer），
-   border-radius 保持静态，避免触发 paint。 */
+/* Aurora keyframes 性能核查结论（UI-U2 复核）：
+   1. transform-only ✓ —— morph-1/2/3 三个 keyframes（含 blob-4 复用 morph-2
+      reverse）全部只 animate translate/rotate/scale（composite 属性），
+      border-radius 已在 .landing-aurora-blob-N 中静态化（不进 keyframes，
+      不触发 paint）。20s/25s/22s 三循环均为 infinite，浏览器对活跃
+      transform 动画会自动提升合成层。
+   2. will-change: transform 刻意不加 —— 容器 .landing-aurora 已有
+      filter: blur(100px)（自身即建立合成层，blob 的合成已在独立层内），
+      再对 4 个大尺寸 blob（最大 70vw×65vh）逐个加 will-change 会在移动端
+      成倍放大 GPU 内存占用，收益为零（动画自身已获提升）；作为无限循环
+      动画也不存在「临时提升」需求。
+   3. reduced-motion：本文件底部 landing reduce 块 + 上方全局 reduce 兜底
+      双重覆盖（animation: none）。 */
 @keyframes aurora-morph-1 {
   0%,
   100% {

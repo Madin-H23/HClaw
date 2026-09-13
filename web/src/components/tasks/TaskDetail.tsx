@@ -48,13 +48,13 @@ const LOG_STATUS_STYLES: Record<
     label: '已排队',
   },
   running: {
-    bg: 'bg-blue-100 dark:bg-blue-900/40',
-    text: 'text-blue-700 dark:text-blue-300',
+    bg: 'bg-brand-100',
+    text: 'text-brand-700',
     label: '运行中',
   },
   recovering: {
-    bg: 'bg-blue-100 dark:bg-blue-900/40',
-    text: 'text-blue-700 dark:text-blue-300',
+    bg: 'bg-brand-100',
+    text: 'text-brand-700',
     label: '正在恢复',
   },
   retry_wait: {
